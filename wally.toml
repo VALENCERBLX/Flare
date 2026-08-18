@@ -1,0 +1,11 @@
+[package]
+name = "valence/flare"
+version = "0.1.0"
+description = "Notifications for Roblox: toasts, banners, dialogs, progress and more, on one queue."
+license = "MIT"
+authors = ["Valence"]
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+
+[dependencies]
+# None. Lume is vendored under src/_Packages, so Flare installs as one tree.

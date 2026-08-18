@@ -1,0 +1,422 @@
+--!strict
+
+--- Draws a notice. One panel per notice, one builder per kind.
+---
+--- Every kind is the same Lume panel with different children, the way every
+--- Lume preset is the same panel with different numbers. What actually differs
+--- between a toast and an achievement is the size, the anchor, and what goes
+--- inside — not the machinery.
+---
+--- The accent bar down the left is shared by all of them, because tone has to
+--- survive being glanced at.
+--- @section Core
+
+local Types = require(script.Parent.Parent.Types)
+local Markup = require(script.Parent.Parent.Markup)
+local Lume = require(script.Parent.Parent._Packages.Lume)
+
+type Notice = any
+
+local Render = {}
+
+--// locals ---------------------------------------------------------------------
+local function toneColour(theme: any, tone: Types.Tone): Color3
+	return theme.Color[tone] or theme.Color.Neutral
+end
+
+--- Body text, markup-compiled or escaped, but never raw.
+local function bodyText(theme: any, notice: Notice): string
+	local spec = notice.Spec
+	local text = spec.Body or ""
+
+	if spec.Markup then
+		return Markup.parse(text, theme.Rich)
+	end
+
+	return Markup.escape(text)
+end
+
+--- `Saved ×3` — grouping is invisible unless it is shown.
+local function withCount(text: string, count: number, theme: any): string
+	if count <= 1 then
+		return text
+	end
+
+	return `{text}  <font color="{theme.Rich.ghost}">×{count}</font>`
+end
+
+local function panelFor(flare: any, notice: Notice): any
+	local theme = flare.Theme
+	local spec = notice.Spec
+
+	local panel = flare.App:panel("card")
+
+	panel:setAnchor(spec.Anchor)
+	panel:setInset(theme.Spacing.Inset)
+	panel:setPadding(theme.Spacing.PaddingX, theme.Spacing.PaddingY)
+	panel:setGap(theme.Spacing.Gap)
+	panel:setRadius(theme.Radius.Notice)
+	panel:setColor(theme.Color.Background)
+	panel:setTransparency(theme.Transparency.Panel)
+	panel:setBorder(false)
+	panel:setShadow(false)
+	panel:setLayer("toast")
+	panel:setWidth(spec.Width or theme.Size.Width)
+	panel:setDraggable(false)
+
+	return panel
+end
+
+--- Title over body, the shape almost every kind wants.
+local function textBlock(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	local theme = flare.Theme
+	local spec = notice.Spec
+
+	if spec.Title then
+		local title = panel:label(Markup.escape(spec.Title))
+
+		title:setFont(theme.Font.Title)
+		title:setTextSize(theme.TextSize.Title)
+		title:setColor(theme.Color.TextPrimary)
+		title:setFill(true)
+		title:setWrapped(true)
+
+		refs.Title = title
+	end
+
+	if spec.Body then
+		local body = panel:label(withCount(bodyText(theme, notice), notice.Count, theme))
+
+		body:setRich(true)
+		body:setFont(theme.Font.Body)
+		body:setTextSize(theme.TextSize.Body)
+		body:setColor(if spec.Title then theme.Color.TextMuted else theme.Color.TextPrimary)
+		body:setFill(true)
+		body:setWrapped(true)
+
+		refs.Body = body
+	end
+end
+
+local function actionRow(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	local spec = notice.Spec
+
+	if #spec.Actions == 0 then
+		return
+	end
+
+	local theme = flare.Theme
+	local row = panel:group("horizontal")
+	local buttons: { any } = {}
+
+	row:setFill(true)
+	row:setGap(theme.Spacing.Gap)
+	row:setAlign(Enum.HorizontalAlignment.Right)
+
+	for _, action in spec.Actions do
+		local button = row:button(action.Text)
+
+		button:setVariant(if action.Primary then "soft" else "ghost")
+		button:setRadius(theme.Radius.Notice - 4)
+
+		if action.Tone then
+			button:setColor(toneColour(theme, action.Tone))
+		end
+
+		table.insert(buttons, button)
+
+		button:onClicked(function()
+			local keep = false
+
+			if action.Run then
+				local ok, result = pcall(action.Run, notice)
+
+				if not ok then
+					warn(`[Flare] action '{action.Text}' errored: {result}`)
+				else
+					--// returning false keeps it open, for an action that
+					--// failed and wants to say why
+					keep = result == false
+				end
+			end
+
+			if not keep then
+				notice:resolve({ Kind = "Action", Action = action.Text })
+			end
+		end)
+	end
+
+	refs.Actions = row
+	--// kept so a live notice can retext or disable its own buttons
+	refs.Buttons = buttons
+end
+
+--// kinds -----------------------------------------------------------------------
+local Kinds = {}
+
+--- The accent bar plus a text block. Toast, Alert, Snackbar and Banner all
+--- share it; they differ in width, anchor and lifetime, not in shape.
+function Kinds.Simple(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	local theme = flare.Theme
+	local spec = notice.Spec
+
+	local row = panel:group("horizontal")
+
+	row:setFill(true)
+	row:setGap(theme.Spacing.Gap + 2)
+	row:setAlign(Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Top)
+
+	local bar = row:icon("")
+
+	bar:setIconSize(theme.Size.Bar)
+	bar:setProps({
+		BackgroundColor3 = toneColour(theme, spec.Tone),
+		BackgroundTransparency = 0,
+		Size = UDim2.fromOffset(theme.Size.Bar, theme.Size.Icon),
+	})
+
+	refs.Bar = bar
+
+	if spec.Icon then
+		local icon = row:icon(spec.Icon)
+
+		icon:setIconSize(theme.Size.Icon)
+		icon:setColor(toneColour(theme, spec.Tone))
+
+		refs.Icon = icon
+	end
+
+	local column = row:group("vertical")
+
+	column:setGrow(true)
+	column:setFill(false)
+	column:setGap(2)
+
+	textBlock(column, flare, notice, refs)
+
+	refs.Column = column
+
+	--// a countdown that never counts is just a toast
+	if spec.Deadline then
+		local timer = row:label("")
+
+		timer:setFont(theme.Font.Title)
+		timer:setTextSize(theme.TextSize.Body)
+		timer:setColor(toneColour(theme, spec.Tone))
+		timer:setAlign(Enum.TextXAlignment.Right)
+
+		refs.Timer = timer
+	end
+end
+
+function Kinds.Progress(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	Kinds.Simple(panel, flare, notice, refs)
+
+	local theme = flare.Theme
+	local spec = notice.Spec
+
+	local bar = panel:progress()
+
+	bar:setFill(true)
+	bar:setThickness(theme.Size.Rail)
+	bar:setColor(toneColour(theme, spec.Tone))
+
+	if spec.Indeterminate then
+		bar:setIndeterminate(true)
+	else
+		bar:setValue(spec.Progress or 0)
+	end
+
+	refs.Progress = bar
+end
+
+function Kinds.Choice(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	Kinds.Simple(panel, flare, notice, refs)
+
+	local list = panel:list()
+	local items = {}
+
+	--// Flare capitalises its fields, Lume's list does not
+	for _, choice in notice.Spec.Choices do
+		table.insert(items, {
+			id = choice.Id,
+			text = choice.Text,
+			icon = choice.Icon,
+			description = choice.Description,
+		})
+	end
+
+	list:setItems(items :: any)
+	list:setMaxRows(6)
+	list:setSelectable(true)
+	list:onActivated(function(item)
+		notice:resolve({ Kind = "Value", Value = item.id })
+	end)
+
+	refs.List = list
+end
+
+function Kinds.Prompt(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	Kinds.Simple(panel, flare, notice, refs)
+
+	local spec = notice.Spec
+	local field = panel:field(spec.Placeholder or "")
+
+	field:setFill(true)
+
+	if spec.Default then
+		field:setText(spec.Default)
+	end
+
+	field:onSubmitted(function(text)
+		notice:resolve({ Kind = "Value", Value = text })
+	end)
+
+	refs.Field = field
+end
+
+--- Big, centred, and celebratory. The one kind that is allowed to interrupt.
+function Kinds.Achievement(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	local theme = flare.Theme
+	local spec = notice.Spec
+
+	panel:setPadding(theme.Spacing.PaddingX + 6, theme.Spacing.PaddingY + 6)
+
+	local row = panel:group("horizontal")
+
+	row:setFill(true)
+	row:setGap(theme.Spacing.Gap + 6)
+
+	if spec.Image or spec.Icon then
+		local icon = row:icon((spec.Image or spec.Icon) :: string)
+
+		icon:setIconSize(theme.Size.BigIcon)
+		icon:setColor(toneColour(theme, spec.Tone))
+
+		refs.Icon = icon
+	end
+
+	local column = row:group("vertical")
+
+	column:setGrow(true)
+	column:setFill(false)
+	column:setGap(2)
+
+	if spec.Title then
+		local title = column:label(Markup.escape(spec.Title))
+
+		title:setFont(theme.Font.Title)
+		title:setTextSize(theme.TextSize.Big)
+		title:setColor(toneColour(theme, spec.Tone))
+		title:setFill(true)
+
+		refs.Title = title
+	end
+
+	if spec.Body then
+		local body = column:label(withCount(bodyText(theme, notice), notice.Count, theme))
+
+		body:setRich(true)
+		body:setTextSize(theme.TextSize.Body)
+		body:setColor(theme.Color.TextMuted)
+		body:setFill(true)
+		body:setWrapped(true)
+
+		refs.Body = body
+	end
+end
+
+local BUILDERS: { [string]: (any, any, any, any) -> () } = {
+	Toast = Kinds.Simple,
+	Banner = Kinds.Simple,
+	Alert = Kinds.Simple,
+	Snackbar = Kinds.Simple,
+	Confirm = Kinds.Simple,
+	Hint = Kinds.Simple,
+	Countdown = Kinds.Simple,
+	Loading = Kinds.Progress,
+	Progress = Kinds.Progress,
+	Choice = Kinds.Choice,
+	Prompt = Kinds.Prompt,
+	Achievement = Kinds.Achievement,
+	Reward = Kinds.Achievement,
+}
+
+--// public api ------------------------------------------------------------------
+--- Builds the panel for a notice and returns it with its refs.
+function Render.Build(flare: any, notice: Notice): (any, { [string]: any })
+	local theme = flare.Theme
+	local spec = notice.Spec
+
+	local panel = panelFor(flare, notice)
+	local refs: { [string]: any } = {}
+
+	local build = BUILDERS[spec.Kind] or Kinds.Simple
+
+	build(panel, flare, notice, refs)
+	actionRow(panel, flare, notice, refs)
+
+	--// a banner spans its edge rather than sitting in a corner
+	if spec.Kind == "Banner" then
+		panel:setWidth(spec.Width or math.max(theme.Size.Width, flare.App:viewport().X - theme.Spacing.Inset * 2))
+	end
+
+	if spec.Attach then
+		panel:attachTo(spec.Attach, spec.Side :: any, theme.Spacing.Gap)
+	end
+
+	return panel, refs
+end
+
+--- `1:05`, or `12s` under a minute.
+function Render.Clock(seconds: number): string
+	local left = math.max(0, math.ceil(seconds))
+
+	if left < 60 then
+		return `{left}s`
+	end
+
+	return string.format("%d:%02d", left // 60, left % 60)
+end
+
+--- Repaints without rebuilding, for content that changed on a live notice.
+function Render.Paint(flare: any, notice: Notice)
+	local theme = flare.Theme
+	local spec = notice.Spec
+	local refs = notice.Refs
+
+	if refs.Title and spec.Title then
+		refs.Title:setText(Markup.escape(spec.Title))
+	end
+
+	if refs.Body then
+		refs.Body:setText(withCount(bodyText(theme, notice), notice.Count, theme))
+	end
+
+	if refs.Bar then
+		refs.Bar:setProps({ BackgroundColor3 = toneColour(theme, spec.Tone) })
+	end
+
+	if refs.Timer and spec.Deadline then
+		refs.Timer:setText(Render.Clock(spec.Deadline - os.clock()))
+		refs.Timer:setColor(toneColour(theme, spec.Tone))
+	end
+
+	if refs.Icon and spec.Icon then
+		refs.Icon:setImage(spec.Icon)
+		refs.Icon:setColor(toneColour(theme, spec.Tone))
+	end
+
+	if refs.Progress then
+		refs.Progress:setColor(toneColour(theme, spec.Tone))
+
+		if spec.Indeterminate then
+			refs.Progress:setIndeterminate(true)
+		else
+			refs.Progress:setIndeterminate(false)
+			refs.Progress:setValue(spec.Progress or 0)
+		end
+	end
+end
+
+return Render
