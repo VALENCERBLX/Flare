@@ -93,6 +93,8 @@ export type Defaults = {\
 	Pause: boolean,\
 	Markup: boolean,\
 	Sound: boolean,\
+	--- Played by every notice that names no sound of its own.\
+	DefaultSound: string?,\
 	Dismissible: boolean,\
 	Draggable: boolean,\
 	Width: number?,\
@@ -121,6 +123,7 @@ local defaults: Defaults = {\
 	Pause = true,\
 	Markup = true,\
 	Sound = true,\
+	DefaultSound = nil,\
 	Dismissible = true,\
 	Draggable = false,\
 	Width = nil,\
@@ -213,24 +216,38 @@ local function ensureStepping()\
 	end)\
 end\
 \
+--- Plays a one-shot.\
+---\
+--- `PlayLocalSound` rather than parenting a Sound and calling `Play` on it: a\
+--- Sound only plays once its asset has loaded, and a freshly created one has\
+--- not, so `Play()` on the same frame is a coin flip that lands on silence more\
+--- often than not. `PlayLocalSound` is the engine's own path for this and does\
+--- not care where the Sound is parented.\
 local function play(asset: string?)\
-	if not asset or not defaults.Sound or not RunService:IsClient() then\
+	if not asset or asset == \"\" or not defaults.Sound or not RunService:IsClient() then\
 		return\
 	end\
 \
 	local sound = Instance.new(\"Sound\")\
 \
 	sound.SoundId = asset\
+	sound.Name = \"FlareSound\"\
 	sound.Parent = SoundService\
 \
-	sound:Play()\
+	local played = pcall(function()\
+		SoundService:PlayLocalSound(sound)\
+	end)\
+\
+	if not played then\
+		sound:Play()\
+	end\
 \
 	sound.Ended:Once(function()\
 		sound:Destroy()\
 	end)\
 \
-	--// a sound that never fires Ended would otherwise leak\
-	task.delay(10, function()\
+	--// a sound that fails to load never fires Ended, and would sit there\
+	task.delay(15, function()\
 		if sound.Parent then\
 			sound:Destroy()\
 		end\
@@ -294,7 +311,27 @@ function Flare.Start(options: FlareOptions?): typeof(Flare)\
 	end\
 \
 	if settings.Sound ~= nil then\
-		defaults.Sound = settings.Sound\
+		--// a string is the sound itself, not a gate: `Sound = \"rbxassetid://…\"`\
+		--// is what people write, and silently treating it as `true` was worse\
+		--// than either reading\
+		if type(settings.Sound) == \"string\" then\
+			defaults.Sound = true\
+			defaults.DefaultSound = settings.Sound\
+		else\
+			defaults.Sound = settings.Sound == true\
+		end\
+	end\
+\
+	if settings.Sounds then\
+		theme = Themes.Extend(theme, { Sound = settings.Sounds })\
+\
+		Flare.Theme = theme\
+	end\
+\
+	if settings.Icons then\
+		theme = Themes.Extend(theme, { Icon = settings.Icons })\
+\
+		Flare.Theme = theme\
 	end\
 \
 	if settings.Dismissible ~= nil then\
@@ -425,9 +462,10 @@ function Flare.Mount(notice: Notice)\
 	local spec = notice.Spec\
 	local theme = Flare.Theme\
 \
-	--// a tone's default icon and sound, when the notice named none of its own\
-	if not spec.Icon and theme.Icon[spec.Tone] then\
-		spec.Icon = theme.Icon[spec.Tone]\
+	--// a kind's icon wins over a tone's, so a theme can give Achievement its\
+	--// own glyph without every Accent notice inheriting it\
+	if not spec.Icon and not spec.Image then\
+		spec.Icon = theme.Icon[spec.Kind] or theme.Icon[spec.Tone]\
 	end\
 \
 	local panel, refs = Render.Build(Flare, notice)\
@@ -468,7 +506,7 @@ function Flare.Mount(notice: Notice)\
 		notice.Expires = os.clock() + duration\
 	end\
 \
-	play(spec.Sound or theme.Sound[spec.Tone])\
+	play(spec.Sound or theme.Sound[spec.Kind] or theme.Sound[spec.Tone] or defaults.DefaultSound)\
 \
 	for _, handler in notice.ShowHandlers do\
 		task.spawn(handler)\
@@ -1097,6 +1135,8 @@ export type SizeTokens = {\
 \
 export type TransparencyTokens = {\
 	Panel: number,\
+	--- Notice icons. Zero — solid — unlike Lume's muted chrome icons.\
+	Icon: number,\
 	Overlay: number,\
 	Muted: number,\
 	Ghost: number,\
@@ -1201,8 +1241,14 @@ export type FlareOptions = {\
 	Pause: boolean?,\
 	--- Parse markup in bodies and titles by default.\
 	Markup: boolean?,\
-	--- Play sounds at all. Individual notices still need one set.\
-	Sound: boolean?,\
+	--- Play sounds at all. Pass a string instead of `true` to give every\
+	--- notice that sound unless it names its own.\
+	Sound: (boolean | string)?,\
+	--- Asset id per tone, played when a notice of that tone appears and sets\
+	--- no sound of its own. `{ Ok = \"rbxassetid://…\" }`.\
+	Sounds: { [string]: string }?,\
+	--- Asset id per tone, shown when a notice of that tone sets no icon.\
+	Icons: { [string]: string }?,\
 	--- Show a close button, and let a click outside dismiss.\
 	Dismissible: boolean?,\
 	--- Let notices be dragged around the screen.\
@@ -2205,6 +2251,7 @@ function Kinds.Simple(panel: any, flare: any, notice: Notice, refs: { [string]: 
 \
 		icon:setIconSize(theme.Size.Icon)\
 		icon:setColor(toneColour(theme, spec.Tone))\
+		icon:setProps({ ImageTransparency = theme.Transparency.Icon })\
 \
 		refs.Icon = icon\
 	end\
@@ -2314,7 +2361,16 @@ function Kinds.Achievement(panel: any, flare: any, notice: Notice, refs: { [stri
 		local icon = row:icon((spec.Image or spec.Icon) :: string)\
 \
 		icon:setIconSize(theme.Size.BigIcon)\
-		icon:setColor(toneColour(theme, spec.Tone))\
+		icon:setProps({ ImageTransparency = theme.Transparency.Icon })\
+\
+		--// a large image is artwork, so it is painted white rather than left\
+		--// alone: Lume's icons are chrome and default to the muted text\
+		--// colour, which would drain a piece of art to grey\
+		if spec.Image then\
+			icon:setColor(Color3.new(1, 1, 1))\
+		else\
+			icon:setColor(toneColour(theme, spec.Tone))\
+		end\
 \
 		refs.Icon = icon\
 	end\
@@ -2425,9 +2481,15 @@ function Render.Paint(flare: any, notice: Notice)\
 		refs.Timer:setColor(toneColour(theme, spec.Tone))\
 	end\
 \
-	if refs.Icon and spec.Icon then\
-		refs.Icon:setImage(spec.Icon)\
-		refs.Icon:setColor(toneColour(theme, spec.Tone))\
+	if refs.Icon and (spec.Icon or spec.Image) then\
+		refs.Icon:setImage((spec.Image or spec.Icon) :: string)\
+		refs.Icon:setProps({ ImageTransparency = theme.Transparency.Icon })\
+\
+		if spec.Image then\
+			refs.Icon:setColor(Color3.new(1, 1, 1))\
+		else\
+			refs.Icon:setColor(toneColour(theme, spec.Tone))\
+		end\
 	end\
 \
 	if refs.Progress then\
@@ -15598,6 +15660,10 @@ local Default: Types.Theme = {\
 \
 	Transparency = {\
 		Panel = 0.25,\
+		--// Lume's icons default to `transparency.muted` (0.5) because there\
+		--// they are chrome. A notice's icon is the notice, so Flare paints it\
+		--// solid unless a theme says otherwise.\
+		Icon = 0,\
 		Overlay = 0.45,\
 		Muted = 0.25,\
 		Ghost = 0.45,\

@@ -71,6 +71,8 @@ export type Defaults = {
 	Pause: boolean,
 	Markup: boolean,
 	Sound: boolean,
+	--- Played by every notice that names no sound of its own.
+	DefaultSound: string?,
 	Dismissible: boolean,
 	Draggable: boolean,
 	Width: number?,
@@ -99,6 +101,7 @@ local defaults: Defaults = {
 	Pause = true,
 	Markup = true,
 	Sound = true,
+	DefaultSound = nil,
 	Dismissible = true,
 	Draggable = false,
 	Width = nil,
@@ -191,24 +194,38 @@ local function ensureStepping()
 	end)
 end
 
+--- Plays a one-shot.
+---
+--- `PlayLocalSound` rather than parenting a Sound and calling `Play` on it: a
+--- Sound only plays once its asset has loaded, and a freshly created one has
+--- not, so `Play()` on the same frame is a coin flip that lands on silence more
+--- often than not. `PlayLocalSound` is the engine's own path for this and does
+--- not care where the Sound is parented.
 local function play(asset: string?)
-	if not asset or not defaults.Sound or not RunService:IsClient() then
+	if not asset or asset == "" or not defaults.Sound or not RunService:IsClient() then
 		return
 	end
 
 	local sound = Instance.new("Sound")
 
 	sound.SoundId = asset
+	sound.Name = "FlareSound"
 	sound.Parent = SoundService
 
-	sound:Play()
+	local played = pcall(function()
+		SoundService:PlayLocalSound(sound)
+	end)
+
+	if not played then
+		sound:Play()
+	end
 
 	sound.Ended:Once(function()
 		sound:Destroy()
 	end)
 
-	--// a sound that never fires Ended would otherwise leak
-	task.delay(10, function()
+	--// a sound that fails to load never fires Ended, and would sit there
+	task.delay(15, function()
 		if sound.Parent then
 			sound:Destroy()
 		end
@@ -272,7 +289,27 @@ function Flare.Start(options: FlareOptions?): typeof(Flare)
 	end
 
 	if settings.Sound ~= nil then
-		defaults.Sound = settings.Sound
+		--// a string is the sound itself, not a gate: `Sound = "rbxassetid://…"`
+		--// is what people write, and silently treating it as `true` was worse
+		--// than either reading
+		if type(settings.Sound) == "string" then
+			defaults.Sound = true
+			defaults.DefaultSound = settings.Sound
+		else
+			defaults.Sound = settings.Sound == true
+		end
+	end
+
+	if settings.Sounds then
+		theme = Themes.Extend(theme, { Sound = settings.Sounds })
+
+		Flare.Theme = theme
+	end
+
+	if settings.Icons then
+		theme = Themes.Extend(theme, { Icon = settings.Icons })
+
+		Flare.Theme = theme
 	end
 
 	if settings.Dismissible ~= nil then
@@ -403,9 +440,10 @@ function Flare.Mount(notice: Notice)
 	local spec = notice.Spec
 	local theme = Flare.Theme
 
-	--// a tone's default icon and sound, when the notice named none of its own
-	if not spec.Icon and theme.Icon[spec.Tone] then
-		spec.Icon = theme.Icon[spec.Tone]
+	--// a kind's icon wins over a tone's, so a theme can give Achievement its
+	--// own glyph without every Accent notice inheriting it
+	if not spec.Icon and not spec.Image then
+		spec.Icon = theme.Icon[spec.Kind] or theme.Icon[spec.Tone]
 	end
 
 	local panel, refs = Render.Build(Flare, notice)
@@ -446,7 +484,7 @@ function Flare.Mount(notice: Notice)
 		notice.Expires = os.clock() + duration
 	end
 
-	play(spec.Sound or theme.Sound[spec.Tone])
+	play(spec.Sound or theme.Sound[spec.Kind] or theme.Sound[spec.Tone] or defaults.DefaultSound)
 
 	for _, handler in notice.ShowHandlers do
 		task.spawn(handler)

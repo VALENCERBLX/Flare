@@ -130,7 +130,7 @@ Every kind takes all of these.
 | `:Priority(n)` | Higher outlives the cap — see [Queue](Queue.md) |
 | `:Group(key)` | Collapse duplicates under one key |
 | `:Dismissible(bool)` `:Pausable(bool)` | Player controls |
-| `:Sound(asset)` | Played on show |
+| `:Sound(asset)` | Played on show, beating any theme default |
 | `:Action(text, run, tone)` | Adds a button |
 | `:Literal()` | Turns markup off for this notice |
 | `:Attach(target, side)` | Pins to a GuiObject |

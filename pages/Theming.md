@@ -61,24 +61,49 @@ Flare.Toast("No shadow"):Shadow(false):Show()           -- or per notice
 Point `Shadow.Image` at your own nine-sliced asset and every notice picks it
 up.
 
-## Per-tone icons and sounds
+## Icons and sounds
 
 Empty by default, because a guessed asset id is worse than none. Fill them in
-and every notice of that tone gets them without asking:
+and every notice picks them up without asking. Straight off `Start` is the
+short way:
 
 ```lua
-Flare.DefineTheme("Mine", {
-    Icon = {
+Flare.Start({
+    Icons = {
         Ok = "rbxassetid://1234567",
         Danger = "rbxassetid://7654321",
+        Achievement = "rbxassetid://2222222",
     },
-    Sound = {
+    Sounds = {
         Danger = "rbxassetid://9999999",
     },
 })
 ```
 
-A notice that sets its own `:Icon()` or `:Sound()` always wins.
+Or as part of a theme, if they belong to a look:
+
+```lua
+Flare.DefineTheme("Mine", {
+    Icon = { Ok = "rbxassetid://1234567" },
+    Sound = { Danger = "rbxassetid://9999999" },
+})
+```
+
+Both tables are keyed by **tone or kind**, and a kind wins — so `Achievement`
+can have its own glyph without every `Accent` notice inheriting it. A notice
+that sets its own `:Icon()` or `:Sound()` beats both.
+
+One sound for everything:
+
+```lua
+Flare.Start({ Sound = "rbxassetid://1234567" })
+```
+
+`Sound = false` silences the lot, notice-level assets included.
+
+Notice icons are drawn opaque and tinted to the notice's tone. A large
+`:Image()` is treated as artwork instead: painted white, at its own colours.
+`Transparency.Icon` is the token if you want them faded.
 
 ## Rendering somewhere else
 

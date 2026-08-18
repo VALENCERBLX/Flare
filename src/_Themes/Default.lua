@@ -87,6 +87,10 @@ local Default: Types.Theme = {
 
 	Transparency = {
 		Panel = 0.25,
+		--// Lume's icons default to `transparency.muted` (0.5) because there
+		--// they are chrome. A notice's icon is the notice, so Flare paints it
+		--// solid unless a theme says otherwise.
+		Icon = 0,
 		Overlay = 0.45,
 		Muted = 0.25,
 		Ghost = 0.45,

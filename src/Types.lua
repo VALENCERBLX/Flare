@@ -203,6 +203,8 @@ export type SizeTokens = {
 
 export type TransparencyTokens = {
 	Panel: number,
+	--- Notice icons. Zero — solid — unlike Lume's muted chrome icons.
+	Icon: number,
 	Overlay: number,
 	Muted: number,
 	Ghost: number,
@@ -307,8 +309,14 @@ export type FlareOptions = {
 	Pause: boolean?,
 	--- Parse markup in bodies and titles by default.
 	Markup: boolean?,
-	--- Play sounds at all. Individual notices still need one set.
-	Sound: boolean?,
+	--- Play sounds at all. Pass a string instead of `true` to give every
+	--- notice that sound unless it names its own.
+	Sound: (boolean | string)?,
+	--- Asset id per tone, played when a notice of that tone appears and sets
+	--- no sound of its own. `{ Ok = "rbxassetid://…" }`.
+	Sounds: { [string]: string }?,
+	--- Asset id per tone, shown when a notice of that tone sets no icon.
+	Icons: { [string]: string }?,
 	--- Show a close button, and let a click outside dismiss.
 	Dismissible: boolean?,
 	--- Let notices be dragged around the screen.

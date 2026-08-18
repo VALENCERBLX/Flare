@@ -218,6 +218,7 @@ function Kinds.Simple(panel: any, flare: any, notice: Notice, refs: { [string]: 
 
 		icon:setIconSize(theme.Size.Icon)
 		icon:setColor(toneColour(theme, spec.Tone))
+		icon:setProps({ ImageTransparency = theme.Transparency.Icon })
 
 		refs.Icon = icon
 	end
@@ -327,7 +328,16 @@ function Kinds.Achievement(panel: any, flare: any, notice: Notice, refs: { [stri
 		local icon = row:icon((spec.Image or spec.Icon) :: string)
 
 		icon:setIconSize(theme.Size.BigIcon)
-		icon:setColor(toneColour(theme, spec.Tone))
+		icon:setProps({ ImageTransparency = theme.Transparency.Icon })
+
+		--// a large image is artwork, so it is painted white rather than left
+		--// alone: Lume's icons are chrome and default to the muted text
+		--// colour, which would drain a piece of art to grey
+		if spec.Image then
+			icon:setColor(Color3.new(1, 1, 1))
+		else
+			icon:setColor(toneColour(theme, spec.Tone))
+		end
 
 		refs.Icon = icon
 	end
@@ -438,9 +448,15 @@ function Render.Paint(flare: any, notice: Notice)
 		refs.Timer:setColor(toneColour(theme, spec.Tone))
 	end
 
-	if refs.Icon and spec.Icon then
-		refs.Icon:setImage(spec.Icon)
-		refs.Icon:setColor(toneColour(theme, spec.Tone))
+	if refs.Icon and (spec.Icon or spec.Image) then
+		refs.Icon:setImage((spec.Image or spec.Icon) :: string)
+		refs.Icon:setProps({ ImageTransparency = theme.Transparency.Icon })
+
+		if spec.Image then
+			refs.Icon:setColor(Color3.new(1, 1, 1))
+		else
+			refs.Icon:setColor(toneColour(theme, spec.Tone))
+		end
 	end
 
 	if refs.Progress then

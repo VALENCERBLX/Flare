@@ -101,7 +101,9 @@ Flare.Start({
     Group = true,            -- collapse duplicates into one with a count
     Pause = true,            -- freeze the countdown while hovered
     Markup = true,           -- parse *bold* and friends in bodies
-    Sound = true,
+    Sound = true,            -- or an asset id, to give every notice that sound
+    Sounds = { Danger = "rbxassetid://…" },  -- per tone, or per kind
+    Icons = { Ok = "rbxassetid://…" },       -- per tone, or per kind
     Dismissible = true,      -- click to dismiss, × on the sticky ones
     Draggable = false,       -- let them be dragged around
     Shadow = true,
