@@ -73,8 +73,8 @@ local lines: { string } = {
 	"",
 	"\tPaste this whole file into the Roblox Studio command bar.",
 	"",
-	"\tFlare depends on Lume. Install Lume first, or the console will error on",
-	"\tstart with a message telling you where it looked.",
+	"\tLume is vendored inside Flare, so this is everything — there is nothing",
+	"\telse to install.",
 	"",
 	"\tOptions (set before running, all optional):",
 	"",
@@ -162,9 +162,6 @@ if installed then
 	end
 end
 
-if not parent:FindFirstChild("Lume") and not game:GetService("ReplicatedStorage"):FindFirstChild("Lume") then
-	warn("Flare: Lume was not found. Install Lume as well, or the console cannot render.")
-end
 
 say(`Flare installed to {parent:GetFullName()}.{name} ({#MODULES} instances)`)
 ]==]
