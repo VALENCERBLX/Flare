@@ -232,19 +232,24 @@ function Notice.Literal(self: Notice): Notice
 end
 
 --// lifetime ---------------------------------------------------------------------
---- Seconds on screen. Zero or nil means it stays until dismissed.
+--- Seconds on screen. Zero means it stays until something dismisses it.
+---
+--- `nil` is not the same as zero: it means *unset*, and an unset duration on a
+--- kind that fades falls back to the theme's default for that kind. Zero is how
+--- you say "no, really, stay".
 function Notice.Duration(self: Notice, seconds: number?): Notice
 	self.Spec.Duration = seconds
 
-	if self.Shown and seconds then
-		self.Expires = os.clock() + seconds
+	if self.Shown then
+		self.Expires = if seconds and seconds > 0 then os.clock() + seconds else nil
 	end
 
 	return self
 end
 
+--- Stays until dismissed or resolved, whatever kind it is.
 function Notice.Sticky(self: Notice): Notice
-	return Notice.Duration(self, nil)
+	return Notice.Duration(self, 0)
 end
 
 --- Higher sorts nearer the front, and displaces the least important notice on
