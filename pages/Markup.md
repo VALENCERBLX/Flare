@@ -5,7 +5,7 @@ Bodies and titles are parsed for a small markup dialect and compiled to
 not write cannot inject tags.
 
 ```lua
-Flare.toast("*Rin* joined — press `E` to greet"):show()
+Flare.Toast("*Rin* joined — press `E` to greet"):Show()
 ```
 
 ## Syntax
@@ -20,7 +20,7 @@ Flare.toast("*Rin* joined — press `E` to greet"):show()
 | `[#FF00AA]…[/]` | any hex colour |
 | `[b] [i] [u] [s]` | explicit tags, closed with `[/b]` and so on |
 
-The tone names inside brackets are the same six as `:tone()` — `neutral`,
+The tone names inside brackets are the same six as `:Tone()` — `neutral`,
 `info`, `ok`, `warn`, `danger`, `accent` — and they take their colours from
 the active theme, so `[danger]` matches whatever red the theme uses.
 
@@ -30,7 +30,7 @@ This is the part that matters. A player named `<b>Rin</b>` shows up as the
 literal text `<b>Rin</b>`, not as bold text:
 
 ```lua
-Flare.toast(`{player.Name} joined`):show()
+Flare.Toast(`{player.Name} joined`):Show()
 ```
 
 Markup is compiled *after* escaping, so the two never race: your `*bold*`
@@ -40,7 +40,7 @@ If a body should not be interpreted at all — a chat line, a player's own
 input — turn it off for that notice:
 
 ```lua
-Flare.toast(message):literal():show()
+Flare.Toast(message):Literal():Show()
 ```
 
 Or globally:

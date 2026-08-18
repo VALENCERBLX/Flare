@@ -1,6 +1,6 @@
 [package]
 name = "valence/flare"
-version = "0.1.0"
+version = "0.2.0"
 description = "Notifications for Roblox: toasts, banners, dialogs, progress and more, on one queue."
 license = "MIT"
 authors = ["Valence"]

@@ -5,10 +5,10 @@ Flare is one require and one call.
 ```lua
 local Flare = require(game:GetService("ReplicatedStorage").Flare)
 
-Flare.toast("Saved"):ok():show()
+Flare.Toast("Saved"):Ok():Show()
 ```
 
-Nothing is built until the first `:show()` — requiring Flare creates no
+Nothing is built until the first `:Show()` — requiring Flare creates no
 instances, so a game that never notifies pays nothing for having it installed.
 
 ## Install
@@ -34,35 +34,35 @@ Flare = "valence/flare@0.1.0"
 Every kind returns the same object, and every setter returns it again:
 
 ```lua
-Flare.toast("Connection lost")
-    :warn()
-    :icon("rbxassetid://1234567")
-    :duration(8)
-    :priority(5)
-    :show()
+Flare.Toast("Connection lost")
+    :Warn()
+    :Icon("rbxassetid://1234567")
+    :Duration(8)
+    :Priority(5)
+    :Show()
 ```
 
 The builder and the live handle are the same object. Setters keep working
-after `:show()`, which is the point — half of these notices are alive:
+after `:Show()`, which is the point — half of these notices are alive:
 
 ```lua
-local job = Flare.progress("Uploading"):show()
+local job = Flare.Progress("Uploading"):Show()
 
 for index = 1, 10 do
-    job:progress(index / 10)
+    job:Progress(index / 10)
     task.wait(0.2)
 end
 
-job:finish("Uploaded")
+job:Finish("Uploaded")
 ```
 
 ## Asking a question
 
-`:await()` blocks the calling thread and returns a `Result`. It shows the
+`:Await()` blocks the calling thread and returns a `Result`. It shows the
 notice first if you have not, so it is one expression rather than two:
 
 ```lua
-local answer = Flare.confirm("Delete your save?"):danger():await()
+local answer = Flare.Confirm("Delete your save?"):Danger():Await()
 
 if answer.Kind == "Accepted" then
     wipe()
@@ -72,13 +72,13 @@ end
 Or stay asynchronous with callbacks:
 
 ```lua
-Flare.confirm("Delete your save?")
-    :danger()
-    :onAccept(wipe)
-    :onCancel(function()
-        Flare.toast("Nothing was deleted"):show()
+Flare.Confirm("Delete your save?")
+    :Danger()
+    :OnAccept(wipe)
+    :OnCancel(function()
+        Flare.Toast("Nothing was deleted"):Show()
     end)
-    :show()
+    :Show()
 ```
 
 ## Configuring
@@ -87,18 +87,61 @@ Optional — the first notice starts Flare implicitly with the defaults.
 
 ```lua
 Flare.Start({
-    Theme = "Default",
-    Max = 4,          -- notices on screen per anchor
-    Duration = 5,     -- seconds, for kinds that fade
-    Group = true,     -- collapse duplicates into one with a count
-    Pause = true,     -- freeze the countdown while hovered
-    Markup = true,    -- parse *bold* and friends in bodies
+    Theme = "Default",       -- a registered theme name
+    Tokens = { … },          -- one-off token overrides on top of it
+
+    Anchor = "bottomRight",  -- where notices go when they do not say
+    Max = 4,                 -- on screen per anchor; the rest wait
+    Duration = 5,            -- seconds, for kinds that fade
+    Durations = {            -- or per kind
+        Toast = 4,
+        Banner = 8,
+    },
+
+    Group = true,            -- collapse duplicates into one with a count
+    Pause = true,            -- freeze the countdown while hovered
+    Markup = true,           -- parse *bold* and friends in bodies
     Sound = true,
+    Dismissible = true,      -- click to dismiss, × on the sticky ones
+    Draggable = false,       -- let them be dragged around
+    Shadow = true,
+
+    Width = 320,
+    Gap = 8,                 -- between notices
+    Inset = 24,              -- between the stack and the screen edge
+
+    App = nil,               -- render into a Lume app you already have
+    Gui = nil,               -- or a ScreenGui you own
+    DisplayOrder = 9000,
 })
 ```
 
-Pass `App` to render into a Lume app you already have, or `Gui` to render into
-a `ScreenGui` you own.
+Call it again whenever you like — it merges, so changing one setting later does
+not reset the rest, and a raised `Max` reaches queues that already exist.
+
+## Types
+
+Everything is typed, so the whole chain autocompletes and a typo is a red
+squiggle rather than a runtime surprise:
+
+```lua
+local Flare = require(ReplicatedStorage.Flare)
+
+local function announce(text: string): Flare.Notice
+    return Flare.Toast(text):Ok():Show()
+end
+
+local function ask(question: string): boolean
+    local result: Flare.Result = Flare.Confirm(question):Await()
+
+    return result.Kind == "Accepted"
+end
+```
+
+`Flare.Notice`, `Flare.Result`, `Flare.Tone`, `Flare.Kind`, `Flare.Anchor`,
+`Flare.Theme`, `Flare.Spec` and `Flare.FlareOptions` are all exported. Every
+setter is declared as returning `Notice`, so the chain stays typed however long
+it gets.
 
 ## Server to client
 
@@ -112,7 +155,7 @@ Notify:FireClient(player, "ok", "Purchase complete")
 
 -- client
 Notify.OnClientEvent:Connect(function(tone, body)
-    Flare.toast(body):tone(tone):show()
+    Flare.Toast(body):Tone(tone):Show()
 end)
 ```
 

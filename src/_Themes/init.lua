@@ -6,11 +6,13 @@
 --- without leaking its overrides into the default.
 --- @section Themes
 
+local Types = require(script.Parent.Types)
 local Default = require(script.Default)
 
 local Themes = {}
 
-export type Theme = typeof(Default)
+export type Theme = Types.Theme
+export type ThemeOverride = Types.ThemeOverride
 
 local registry: { [string]: Theme } = { default = Default }
 
@@ -56,9 +58,16 @@ function Themes.Resolve(name: string?): Theme
 	return found
 end
 
-function Themes.Register(name: string, tokens: { [string]: any }, extends: string?): Theme
+--- A new theme with `overrides` deep-merged in. The receiver is untouched, so
+--- extending the default never leaks into it.
+function Themes.Extend(base: Theme, overrides: ThemeOverride): Theme
+	return merge(base :: any, overrides :: any) :: any
+end
+
+--- Registers a theme under a name, so `Flare.SetTheme` can find it.
+function Themes.Register(name: string, tokens: ThemeOverride, extends: string?): Theme
 	local base = if extends then Themes.Resolve(extends) else Default
-	local built = merge(base :: any, tokens) :: Theme
+	local built = Themes.Extend(base, tokens)
 
 	built.Name = name
 	registry[string.lower(name)] = built

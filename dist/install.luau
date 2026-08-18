@@ -29,22 +29,25 @@ local MODULES = {
 --- ```lua\
 --- local Flare = require(ReplicatedStorage.Flare)\
 ---\
---- Flare.toast(\"Saved\"):ok():show()\
+--- Flare.Toast(\"Saved\"):Ok():Show()\
 ---\
---- Flare.confirm(\"Delete everything?\")\
----     :danger()\
----     :onAccept(wipe)\
----     :show()\
+--- Flare.Confirm(\"Delete everything?\")\
+---     :Danger()\
+---     :OnAccept(wipe)\
+---     :Show()\
 ---\
---- local job = Flare.progress(\"Uploading\"):show()\
---- job:progress(0.4)\
---- job:finish(\"Uploaded\")\
+--- local job = Flare.Progress(\"Uploading\"):Show()\
+--- job:Progress(0.4)\
+--- job:Finish(\"Uploaded\")\
 --- ```\
 ---\
 --- The builder and the live handle are the same object, so a setter works\
---- before and after `:show()`. Half of these notices are alive — a progress\
+--- before and after `:Show()`. Half of these notices are alive — a progress\
 --- bar, a countdown, a prompt — and a builder that goes inert on show is the\
 --- wrong shape for them.\
+---\
+--- Nothing is built until the first `:Show()`, so a game that never notifies\
+--- pays nothing for having Flare installed.\
 ---\
 --- Part of Valence Libs, by Valence.\
 --- @section Overview\
@@ -56,51 +59,84 @@ local Types = require(script.Types)\
 local Markup = require(script.Markup)\
 local Themes = require(script._Themes)\
 \
-local Notice = require(script._Core.Notice)\
+local NoticeClass = require(script._Core.Notice)\
 local Queue = require(script._Core.Queue)\
 local Render = require(script._Core.Render)\
 \
 local Lume = require(script._Packages.Lume)\
 \
---// types\
-export type Notice = any\
+--// types ------------------------------------------------------------------------\
+--- The chained builder and live handle. Every setter returns one.\
+export type Notice = NoticeClass.Notice\
 export type Result = Types.Result\
+export type ResultKind = Types.ResultKind\
 export type Spec = Types.Spec\
 export type Tone = Types.Tone\
 export type Kind = Types.Kind\
 export type Anchor = Types.Anchor\
+export type Side = Types.Side\
+export type Choice = Types.Choice\
+export type ChoiceLike = Types.ChoiceLike\
+export type Action = Types.Action\
+export type Theme = Types.Theme\
+export type ThemeOverride = Types.ThemeOverride\
 export type FlareOptions = Types.FlareOptions\
 \
---// state -----------------------------------------------------------------------\
+--- What a notice's setters default to when it does not say otherwise. Read it\
+--- freely; change it through `Flare.Start`.\
+export type Defaults = {\
+	Anchor: Anchor,\
+	Max: number,\
+	Duration: number,\
+	Durations: { [string]: number },\
+	Group: boolean,\
+	Pause: boolean,\
+	Markup: boolean,\
+	Sound: boolean,\
+	Dismissible: boolean,\
+	Draggable: boolean,\
+	Width: number?,\
+}\
+\
+--// state ------------------------------------------------------------------------\
 local Flare = {}\
 \
-Flare.Version = \"0.1.0\"\
-Flare.App = nil :: any\
+Flare.Version = \"0.2.0\"\
+\
+--- The markup compiler, exported so the same dialect can be used elsewhere.\
 Flare.Markup = Markup\
+--- The theme registry: `Resolve`, `Register`, `List`.\
 Flare.Themes = Themes\
+--- The Lume app notices are drawn into. Nil until the first notice.\
+Flare.App = nil :: any\
+--- The active theme's tokens.\
+Flare.Theme = Themes.Default :: Theme\
 \
-local app: any = nil\
-local theme: any = Themes.Default\
-local queues: { [string]: any } = {}\
-local stacks: { [string]: any } = {}\
-local stepping: RBXScriptConnection? = nil\
-local sequence = 0\
-\
-local defaults = {\
-	Anchor = \"bottomRight\" :: Types.Anchor,\
+local defaults: Defaults = {\
+	Anchor = \"bottomRight\",\
 	Max = 4,\
 	Duration = 5,\
+	Durations = {},\
 	Group = true,\
 	Pause = true,\
 	Markup = true,\
 	Sound = true,\
-	Width = nil :: number?,\
+	Dismissible = true,\
+	Draggable = false,\
+	Width = nil,\
 }\
 \
 Flare.Defaults = defaults\
 \
---// locals ----------------------------------------------------------------------\
-local function queueFor(anchor: string): any\
+local queues: { [string]: Queue.Queue } = {}\
+local stacks: { [string]: any } = {}\
+local stepping: RBXScriptConnection? = nil\
+local sequence = 0\
+local gap: number? = nil\
+local inset: number? = nil\
+\
+--// locals -----------------------------------------------------------------------\
+local function queueFor(anchor: string): Queue.Queue\
 	local existing = queues[anchor]\
 \
 	if existing then\
@@ -121,9 +157,9 @@ local function stackFor(anchor: string): any\
 		return existing\
 	end\
 \
-	local created = app:stack(anchor :: any)\
+	local created = Flare.App:stack(anchor :: any)\
 \
-	created:setGap(theme.Spacing.Stack)\
+	created:setGap(gap or Flare.Theme.Spacing.Stack)\
 \
 	stacks[anchor] = created\
 \
@@ -131,7 +167,7 @@ local function stackFor(anchor: string): any\
 end\
 \
 --- One stepper for every queue, started on the first notice and stopped when\
---- the last one goes, so an idle game pays nothing for having Flare installed.\
+--- the last one goes, so an idle game is not paying for a connection.\
 local function ensureStepping()\
 	if stepping then\
 		return\
@@ -144,7 +180,7 @@ local function ensureStepping()\
 		local live = 0\
 \
 		for _, queue in queues do\
-			--// a countdown is repainted only when its whole-second reading\
+			--// a countdown repaints only when its whole-second reading\
 			--// changes, rather than sixty times a second for no visible gain\
 			for _, notice in queue.Live do\
 				local deadline = notice.Spec.Deadline\
@@ -163,7 +199,7 @@ local function ensureStepping()\
 			end\
 \
 			for _, expired in queue:Tick(now, delta) do\
-				expired:resolve({ Kind = \"Expired\" })\
+				expired:Resolve({ Kind = \"Expired\" })\
 			end\
 \
 			live += queue:Count() + queue:Waiting()\
@@ -201,23 +237,37 @@ local function play(asset: string?)\
 	end)\
 end\
 \
---// engine ----------------------------------------------------------------------\
---- Ensures an app exists. Called lazily, so requiring Flare builds no\
---- instances until something is actually shown.\
-function Flare.Ready(): any\
-	if not app then\
-		Flare.Start()\
-	end\
-\
-	return app\
-end\
-\
---- Configures Flare. Optional — anything not set keeps its default, and the\
+--// configuration ----------------------------------------------------------------\
+--- Configures Flare. Optional — anything left out keeps its default, and the\
 --- first notice starts it implicitly.\
-function Flare.Start(options: FlareOptions?)\
+---\
+--- ```lua\
+--- Flare.Start({\
+---     Theme = \"Default\",\
+---     Max = 4,\
+---     Duration = 5,\
+---     Anchor = \"topRight\",\
+---     Shadow = true,\
+--- })\
+--- ```\
+function Flare.Start(options: FlareOptions?): typeof(Flare)\
 	local settings = options or {}\
 \
-	theme = Themes.Resolve(settings.Theme)\
+	local theme = Themes.Resolve(settings.Theme)\
+\
+	if settings.Tokens then\
+		theme = Themes.Extend(theme, settings.Tokens)\
+	end\
+\
+	if settings.Shadow ~= nil then\
+		theme = Themes.Extend(theme, { Shadow = { Enabled = settings.Shadow } })\
+	end\
+\
+	Flare.Theme = theme\
+\
+	if settings.Anchor then\
+		defaults.Anchor = settings.Anchor\
+	end\
 \
 	if settings.Max then\
 		defaults.Max = settings.Max\
@@ -225,6 +275,10 @@ function Flare.Start(options: FlareOptions?)\
 \
 	if settings.Duration then\
 		defaults.Duration = settings.Duration\
+	end\
+\
+	if settings.Durations then\
+		defaults.Durations = settings.Durations\
 	end\
 \
 	if settings.Group ~= nil then\
@@ -243,27 +297,84 @@ function Flare.Start(options: FlareOptions?)\
 		defaults.Sound = settings.Sound\
 	end\
 \
+	if settings.Dismissible ~= nil then\
+		defaults.Dismissible = settings.Dismissible\
+	end\
+\
+	if settings.Draggable ~= nil then\
+		defaults.Draggable = settings.Draggable\
+	end\
+\
 	if settings.Width then\
 		defaults.Width = settings.Width\
 	end\
 \
-	app = settings.App\
-		or app\
+	if settings.Gap then\
+		gap = settings.Gap\
+	end\
+\
+	if settings.Inset then\
+		inset = settings.Inset\
+	end\
+\
+	Flare.App = settings.App\
+		or Flare.App\
 		or Lume.app({\
 			name = \"Flare\",\
 			gui = settings.Gui,\
 			displayOrder = settings.DisplayOrder or 9000,\
 		})\
 \
-	Flare.App = app\
-	Flare.Theme = theme\
+	--// Lume's shadow is sized for a console window — 22px of bleed on every\
+	--// side. On a stack of notices that reads as haze, and neighbours bleed\
+	--// into each other, so Flare's own tokens replace it wholesale.\
+	local shadow = theme.Shadow\
+\
+	Flare.App:restyle({\
+		shadow = {\
+			image = if shadow.Enabled then shadow.Image else \"\",\
+			slice = shadow.Slice,\
+			color = shadow.Color,\
+			transparency = shadow.Transparency,\
+			spread = shadow.Spread,\
+			offset = shadow.Offset,\
+		},\
+		space = {\
+			lg = inset or theme.Spacing.Inset,\
+		},\
+	})\
+\
+	--// live queues follow a changed cap rather than waiting for a restart\
+	for _, queue in queues do\
+		queue.Max = defaults.Max\
+		queue.Group = defaults.Group\
+	end\
+\
+	for _, stack in stacks do\
+		stack:setGap(gap or theme.Spacing.Stack)\
+	end\
 \
 	return Flare\
 end\
 \
---- Queues a notice. Called by `Notice:show()`.\
-function Flare.Enqueue(_: any, notice: any)\
-	if notice.Shown then\
+--- Ensures an app exists. Called lazily, so requiring Flare builds nothing.\
+function Flare.Ready(): any\
+	if not Flare.App then\
+		Flare.Start()\
+	end\
+\
+	return Flare.App\
+end\
+\
+--// engine -----------------------------------------------------------------------\
+--- Whether a kind fades on its own. Anything asking a question does not.\
+function Flare.Transient(kind: string): boolean\
+	return kind ~= \"Confirm\" and kind ~= \"Prompt\" and kind ~= \"Choice\" and kind ~= \"Alert\"\
+end\
+\
+--- Queues a notice. Called by `Notice:Show()`.\
+function Flare.Enqueue(_: any, notice: Notice)\
+	if notice.Shown or notice.Done then\
 		return\
 	end\
 \
@@ -273,15 +384,13 @@ function Flare.Enqueue(_: any, notice: any)\
 	notice.Order = sequence\
 	notice.Shown = true\
 \
-	local spec = notice.Spec\
-	local queue = queueFor(spec.Anchor)\
-\
+	local queue = queueFor(notice.Spec.Anchor)\
 	local outcome, other = queue:Add(notice)\
 \
-	if outcome == \"grouped\" then\
+	if outcome == \"grouped\" and other then\
 		--// merged into a live one: repaint its count and restart its clock, so\
-		--// a repeat event keeps the notice on screen rather than letting the\
-		--// original expire on the original schedule\
+		--// a repeating event keeps the notice on screen rather than letting\
+		--// the original expire on the original schedule\
 		notice.Shown = false\
 \
 		Render.Paint(Flare, other)\
@@ -294,7 +403,7 @@ function Flare.Enqueue(_: any, notice: any)\
 			other.Panel:flash(0.12)\
 		end\
 \
-		notice:resolve({ Kind = \"Grouped\", Value = other })\
+		notice:Resolve({ Kind = \"Grouped\", Value = other })\
 \
 		return\
 	end\
@@ -312,13 +421,23 @@ function Flare.Enqueue(_: any, notice: any)\
 end\
 \
 --- Builds and shows a notice's panel.\
-function Flare.Mount(notice: any)\
+function Flare.Mount(notice: Notice)\
 	local spec = notice.Spec\
+	local theme = Flare.Theme\
+\
+	--// a tone's default icon and sound, when the notice named none of its own\
+	if not spec.Icon and theme.Icon[spec.Tone] then\
+		spec.Icon = theme.Icon[spec.Tone]\
+	end\
 \
 	local panel, refs = Render.Build(Flare, notice)\
 \
 	notice.Panel = panel\
 	notice.Refs = refs\
+\
+	--// laid out before it joins the stack, so the stack steps by its real\
+	--// height rather than by zero and drops the next notice on top of it\
+	panel:refreshNow()\
 \
 	if not spec.Attach then\
 		stackFor(spec.Anchor):add(panel)\
@@ -342,28 +461,24 @@ function Flare.Mount(notice: any)\
 	local duration = spec.Duration\
 \
 	if duration == nil and Flare.Transient(spec.Kind) then\
-		duration = theme.Duration[spec.Kind] or defaults.Duration\
+		duration = defaults.Durations[spec.Kind] or theme.Duration[spec.Kind] or defaults.Duration\
 	end\
 \
 	if duration and duration > 0 then\
 		notice.Expires = os.clock() + duration\
 	end\
 \
-	play(spec.Sound)\
+	play(spec.Sound or theme.Sound[spec.Tone])\
 \
-	for _, handler in notice.OnShow do\
+	for _, handler in notice.ShowHandlers do\
 		task.spawn(handler)\
 	end\
 \
 	ensureStepping()\
 end\
 \
---- Whether a kind fades on its own. Anything asking a question does not.\
-function Flare.Transient(kind: string): boolean\
-	return kind ~= \"Confirm\" and kind ~= \"Prompt\" and kind ~= \"Choice\" and kind ~= \"Alert\"\
-end\
-\
-function Flare.Unmount(notice: any)\
+--- Takes a notice's panel off screen and lets the rest of the stack close up.\
+function Flare.Unmount(notice: Notice)\
 	local panel = notice.Panel\
 \
 	if not panel or panel.dead then\
@@ -372,8 +487,7 @@ function Flare.Unmount(notice: any)\
 \
 	panel:close()\
 \
-	local anchor = notice.Spec.Anchor\
-	local stack = stacks[anchor]\
+	local stack = stacks[notice.Spec.Anchor]\
 \
 	if stack then\
 		stack:remove(panel)\
@@ -391,7 +505,7 @@ function Flare.Unmount(notice: any)\
 end\
 \
 --- Takes a finished notice off screen and promotes whatever was waiting.\
-function Flare.Release(_: any, notice: any)\
+function Flare.Release(_: any, notice: Notice)\
 	local queue = queues[notice.Spec.Anchor]\
 \
 	Flare.Unmount(notice)\
@@ -407,14 +521,15 @@ function Flare.Release(_: any, notice: any)\
 	end\
 end\
 \
-function Flare.Paint(_: any, notice: any)\
+--- Repaints a live notice's content.\
+function Flare.Paint(_: any, notice: Notice)\
 	if notice.Panel then\
 		Render.Paint(Flare, notice)\
 	end\
 end\
 \
 --- Rebuilds a notice whose structure changed — an action added after showing.\
-function Flare.Rebuild(_: any, notice: any)\
+function Flare.Rebuild(_: any, notice: Notice)\
 	if not notice.Panel then\
 		return\
 	end\
@@ -423,49 +538,50 @@ function Flare.Rebuild(_: any, notice: any)\
 	Flare.Mount(notice)\
 end\
 \
---// kinds -----------------------------------------------------------------------\
-local function make(kind: Types.Kind, body: string?): any\
-	return Notice.new(Flare, kind, body)\
+--// kinds ------------------------------------------------------------------------\
+local function make(kind: Kind, body: string?): Notice\
+	return NoticeClass.new(Flare, kind, body)\
 end\
 \
---- A transient notice in a corner. The default.\
-function Flare.toast(body: string?): Notice\
+--- A transient notice in a corner. The default, and the one to reach for when\
+--- you are not sure.\
+function Flare.Toast(body: string?): Notice\
 	return make(\"Toast\", body)\
 end\
 \
 --- A bar across an edge, for something that affects the whole session.\
-function Flare.banner(body: string?): Notice\
-	return make(\"Banner\", body):at(\"top\")\
+function Flare.Banner(body: string?): Notice\
+	return make(\"Banner\", body):At(\"top\")\
 end\
 \
---- Stays until dismissed.\
-function Flare.alert(body: string?): Notice\
+--- Stays until dismissed — the kind for something they must have seen.\
+function Flare.Alert(body: string?): Notice\
 	return make(\"Alert\", body)\
 end\
 \
---- A toast with one action, the shape of \"Deleted. **Undo**\".\
-function Flare.snackbar(body: string?, actionText: string?, run: ((Notice) -> boolean?)?): Notice\
-	local notice = make(\"Snackbar\", body):at(\"bottom\")\
+--- A toast with one action: the shape of \"Deleted. **Undo**\".\
+function Flare.Snackbar(body: string?, actionText: string?, run: ((Notice) -> boolean?)?): Notice\
+	local notice = make(\"Snackbar\", body):At(\"bottom\")\
 \
 	if actionText then\
-		notice:action(actionText, run)\
+		notice:Action(actionText, run)\
 	end\
 \
 	return notice\
 end\
 \
---- Asks a yes or no question. `:await()` returns the answer.\
-function Flare.confirm(body: string?): Notice\
+--- Asks a yes or no question. `:Await()` returns the answer.\
+function Flare.Confirm(body: string?): Notice\
 	local notice = make(\"Confirm\", body)\
 \
-	notice:action(\"Confirm\", function(handle)\
-		handle:resolve({ Kind = \"Accepted\", Value = true })\
+	notice:Action(\"Confirm\", function(handle)\
+		handle:Resolve({ Kind = \"Accepted\", Value = true })\
 \
 		return false\
 	end)\
 \
-	notice:action(\"Cancel\", function(handle)\
-		handle:resolve({ Kind = \"Cancelled\", Value = false })\
+	notice:Action(\"Cancel\", function(handle)\
+		handle:Resolve({ Kind = \"Cancelled\", Value = false })\
 \
 		return false\
 	end)\
@@ -474,11 +590,11 @@ function Flare.confirm(body: string?): Notice\
 end\
 \
 --- Asks for a line of text.\
-function Flare.prompt(body: string?): Notice\
+function Flare.Prompt(body: string?): Notice\
 	local notice = make(\"Prompt\", body)\
 \
-	notice:action(\"Cancel\", function(handle)\
-		handle:resolve({ Kind = \"Cancelled\" })\
+	notice:Action(\"Cancel\", function(handle)\
+		handle:Resolve({ Kind = \"Cancelled\" })\
 \
 		return false\
 	end)\
@@ -486,87 +602,88 @@ function Flare.prompt(body: string?): Notice\
 	return notice\
 end\
 \
---- Asks the player to pick one of several.\
-function Flare.choice(body: string?, options: { any }?): Notice\
+--- Asks them to pick one of several.\
+function Flare.Choice(body: string?, options: { ChoiceLike }?): Notice\
 	local notice = make(\"Choice\", body)\
 \
 	if options then\
-		notice:choices(options)\
+		notice:Choices(options)\
 	end\
 \
 	return notice\
 end\
 \
---- A bar you update and then resolve.\
-function Flare.progress(body: string?): Notice\
-	return make(\"Progress\", body):progress(0):sticky()\
+--- A bar you fill and then resolve.\
+function Flare.Progress(body: string?): Notice\
+	return make(\"Progress\", body):Progress(0):Sticky()\
 end\
 \
---- An indeterminate spinner for work of unknown length.\
-function Flare.loading(body: string?): Notice\
-	return make(\"Loading\", body):indeterminate(true):sticky()\
+--- An indeterminate spinner, for work of unknown length.\
+function Flare.Loading(body: string?): Notice\
+	return make(\"Loading\", body):Indeterminate(true):Sticky()\
 end\
 \
 --- Counts down to a deadline and expires when it arrives.\
-function Flare.countdown(body: string?, seconds: number?): Notice\
+function Flare.Countdown(body: string?, seconds: number?): Notice\
 	local notice = make(\"Countdown\", body)\
 \
 	if seconds then\
-		notice:duration(seconds):until_(os.clock() + seconds)\
+		notice:Duration(seconds):Until(os.clock() + seconds)\
 	end\
 \
 	return notice\
 end\
 \
 --- Big and celebratory. The one kind allowed to interrupt.\
-function Flare.achievement(title: string?, body: string?): Notice\
-	local notice = make(\"Achievement\", body):at(\"top\"):accent()\
+function Flare.Achievement(title: string?, body: string?): Notice\
+	local notice = make(\"Achievement\", body):At(\"top\"):Accent()\
 \
 	if title then\
-		notice:title(title)\
+		notice:Title(title)\
 	end\
 \
 	return notice\
 end\
 \
 --- An achievement with an amount, for currency and drops.\
-function Flare.reward(title: string?, body: string?): Notice\
-	local notice = make(\"Reward\", body):at(\"top\"):ok()\
+function Flare.Reward(title: string?, body: string?): Notice\
+	local notice = make(\"Reward\", body):At(\"top\"):Ok()\
 \
 	if title then\
-		notice:title(title)\
+		notice:Title(title)\
 	end\
 \
 	return notice\
 end\
 \
---- Pinned to a GuiObject rather than a screen corner.\
-function Flare.hint(body: string?, target: GuiObject?, side: string?): Notice\
+--- Pinned to a GuiObject rather than a screen corner, so it points at the\
+--- thing it is talking about.\
+function Flare.Hint(body: string?, target: GuiObject?, side: Side?): Notice\
 	local notice = make(\"Hint\", body)\
 \
 	if target then\
-		notice:attach(target, side)\
+		notice:Attach(target, side)\
 	end\
 \
 	return notice\
 end\
 \
---// control ---------------------------------------------------------------------\
---- Dismisses everything, everywhere.\
-function Flare.clear(anchor: Types.Anchor?)\
+--// control ----------------------------------------------------------------------\
+--- Dismisses everything, or everything at one anchor.\
+function Flare.Clear(anchor: Anchor?)\
 	for name, queue in queues do\
 		if anchor and name ~= anchor then\
 			continue\
 		end\
 \
 		for _, notice in queue:Clear() do\
-			notice:resolve({ Kind = \"Dismissed\" })\
+			notice:Resolve({ Kind = \"Dismissed\" })\
 		end\
 	end\
 end\
 \
---- How many notices are on screen, or waiting.\
-function Flare.count(): (number, number)\
+--- How many notices are on screen, and how many are waiting for a slot.\
+function Flare.Count(): (number, number)\
 	local live, waiting = 0, 0\
 \
 	for _, queue in queues do\
@@ -577,25 +694,54 @@ function Flare.count(): (number, number)\
 	return live, waiting\
 end\
 \
-function Flare.setTheme(name: string): boolean\
+--- Every live notice, newest queue first. Handy for a \"dismiss all\" button.\
+function Flare.Live(): { Notice }\
+	local out: { Notice } = {}\
+\
+	for _, queue in queues do\
+		for _, notice in queue.Live do\
+			table.insert(out, notice)\
+		end\
+	end\
+\
+	return out\
+end\
+\
+--- Switches theme. Returns false if the name is not registered — new notices\
+--- pick it up, and live ones repaint.\
+function Flare.SetTheme(name: string): boolean\
 	local resolved = Themes.Resolve(name)\
 \
 	if string.lower(resolved.Name) ~= string.lower(name) then\
 		return false\
 	end\
 \
-	theme = resolved\
 	Flare.Theme = resolved\
+\
+	if Flare.App then\
+		Flare.Start({ Theme = name })\
+	end\
+\
+	for _, notice in Flare.Live() do\
+		Flare.Rebuild(Flare, notice)\
+	end\
 \
 	return true\
 end\
 \
-function Flare.defineTheme(name: string, tokens: { [string]: any }, extends: string?)\
+--- Registers a theme. Overrides are deep-merged over the theme it extends, so\
+--- one colour is a one-line theme.\
+---\
+--- ```lua\
+--- Flare.DefineTheme(\"Mine\", { Color = { Ok = Color3.fromHex(\"#7dcfff\") } })\
+--- ```\
+function Flare.DefineTheme(name: string, tokens: ThemeOverride, extends: string?): Theme\
 	return Themes.Register(name, tokens, extends)\
 end\
 \
-function Flare.destroy()\
-	Flare.clear()\
+--- Tears everything down: notices, stepper, app.\
+function Flare.Destroy()\
+	Flare.Clear()\
 \
 	if stepping then\
 		stepping:Disconnect()\
@@ -603,10 +749,8 @@ function Flare.destroy()\
 		stepping = nil\
 	end\
 \
-	if app then\
-		app:destroy()\
-\
-		app = nil\
+	if Flare.App then\
+		Flare.App:destroy()\
 	end\
 \
 	--// left dangling, Render would keep drawing into a destroyed app\
@@ -615,8 +759,6 @@ function Flare.destroy()\
 	table.clear(queues)\
 	table.clear(stacks)\
 end\
-\
-Flare.Theme = theme\
 \
 export type Api = typeof(Flare)\
 \
@@ -753,9 +895,20 @@ return Markup\
 {"Flare/Types","ModuleScript","--!strict\
 \
 --- Every public type in Flare.\
+---\
+--- Exported through the main module too, so `Flare.Notice` and friends are\
+--- reachable without requiring this file directly:\
+---\
+--- ```lua\
+--- local Flare = require(ReplicatedStorage.Flare)\
+---\
+--- local function announce(text: string): Flare.Notice\
+---     return Flare.Toast(text):Ok():Show()\
+--- end\
+--- ```\
 --- @section Overview\
 \
---// what a notice is\
+--// what a notice is -------------------------------------------------------------\
 export type Kind =\
 	\"Toast\"\
 	| \"Banner\"\
@@ -771,10 +924,11 @@ export type Kind =\
 	| \"Reward\"\
 	| \"Hint\"\
 \
---- Semantic colour, not a literal one. A theme decides what `danger` looks\
+--- Semantic colour, not a literal one. A theme decides what `Danger` looks\
 --- like; a caller only says that this is bad news.\
 export type Tone = \"Neutral\" | \"Info\" | \"Ok\" | \"Warn\" | \"Danger\" | \"Accent\"\
 \
+--- Lume's nine anchors. Notices stack away from whichever edge they are on.\
 export type Anchor =\
 	\"top\"\
 	| \"topLeft\"\
@@ -785,6 +939,8 @@ export type Anchor =\
 	| \"left\"\
 	| \"right\"\
 	| \"center\"\
+\
+export type Side = \"top\" | \"bottom\" | \"left\" | \"right\"\
 \
 export type Action = {\
 	Text: string,\
@@ -802,14 +958,28 @@ export type Choice = {\
 	Description: string?,\
 }\
 \
---- What `:await()` gives back, and what the resolve callbacks receive.\
+--- What a choice can be written as: a bare string, where the text is also the\
+--- id, or the full table.\
+export type ChoiceLike = string | {\
+	Id: string?,\
+	Text: string?,\
+	Icon: string?,\
+	Description: string?,\
+}\
+\
+export type ResultKind = \"Accepted\" | \"Cancelled\" | \"Dismissed\" | \"Expired\" | \"Action\" | \"Value\" | \"Grouped\"\
+\
+--- What `:Await()` gives back, and what the resolve callbacks receive.\
 export type Result = {\
-	Kind: \"Accepted\" | \"Cancelled\" | \"Dismissed\" | \"Expired\" | \"Action\" | \"Value\" | \"Grouped\",\
+	Kind: ResultKind,\
+	--- The answer: `true`/`false` for a confirm, the typed text for a prompt,\
+	--- the chosen id for a choice, the notice it merged into for a group.\
 	Value: any?,\
+	--- Which button was pressed, when `Kind` is `Action`.\
 	Action: string?,\
 }\
 \
---// the spec a notice is built from\
+--// the spec a notice is built from ------------------------------------------------\
 export type Spec = {\
 	Kind: Kind,\
 \
@@ -830,8 +1000,11 @@ export type Spec = {\
 	Dismissible: boolean,\
 	Markup: boolean,\
 	Pausable: boolean,\
+	Draggable: boolean,\
+	Shadow: boolean?,\
 	Sound: string?,\
 	Width: number?,\
+	Layer: string?,\
 \
 	Progress: number?,\
 	Indeterminate: boolean?,\
@@ -840,40 +1013,215 @@ export type Spec = {\
 	Placeholder: string?,\
 	Default: string?,\
 	Attach: GuiObject?,\
-	Side: string?,\
+	Side: Side?,\
 \
+	--- Anything you want to carry along. Flare never reads it.\
 	Meta: { [string]: any }?,\
 }\
 \
---// runtime\
-export type Handle = any\
+--// theme tokens -------------------------------------------------------------------\
+export type ColorTokens = {\
+	Background: Color3,\
+	Surface: Color3,\
+	Border: Color3,\
+\
+	TextPrimary: Color3,\
+	TextMuted: Color3,\
+	TextGhost: Color3,\
+\
+	Neutral: Color3,\
+	Info: Color3,\
+	Ok: Color3,\
+	Warn: Color3,\
+	Danger: Color3,\
+	Accent: Color3,\
+\
+	Overlay: Color3,\
+}\
+\
+--- Hex mirrors of the palette. Markup resolves `[ok]…[/ok]` against these, so\
+--- a themed tone and a themed markup tag are the same colour by construction.\
+export type RichTokens = {\
+	text: string,\
+	muted: string,\
+	ghost: string,\
+	code: string,\
+	neutral: string,\
+	info: string,\
+	ok: string,\
+	warn: string,\
+	danger: string,\
+	accent: string,\
+}\
+\
+export type FontTokens = {\
+	Title: Enum.Font,\
+	Body: Enum.Font,\
+	Mono: Enum.Font,\
+}\
+\
+export type TextSizeTokens = {\
+	Title: number,\
+	Body: number,\
+	Small: number,\
+	Big: number,\
+}\
+\
+export type SpacingTokens = {\
+	PaddingX: number,\
+	PaddingY: number,\
+	Gap: number,\
+	--- Between notices in a stack.\
+	Stack: number,\
+	--- Between the stack and the edge of the screen.\
+	Inset: number,\
+}\
+\
+export type RadiusTokens = {\
+	Notice: number,\
+	Pill: number,\
+	Bar: number,\
+}\
+\
+export type SizeTokens = {\
+	Width: number,\
+	BannerHeight: number,\
+	Icon: number,\
+	BigIcon: number,\
+	--- The tone bar down the left of a notice.\
+	Bar: number,\
+	--- The progress rail.\
+	Rail: number,\
+	Action: number,\
+}\
+\
+export type TransparencyTokens = {\
+	Panel: number,\
+	Overlay: number,\
+	Muted: number,\
+	Ghost: number,\
+	Track: number,\
+}\
+\
+--- Named Lume motion specs. Swap a name for a different one — or register your\
+--- own on the app's theme — to change how notices move without touching Flare.\
+export type MotionTokens = {\
+	Enter: string,\
+	Exit: string,\
+	Move: string,\
+	Pulse: string,\
+	Settle: string,\
+}\
+\
+--- Default seconds per kind, for kinds that fade on their own.\
+export type DurationTokens = { [string]: number }\
+\
+--- Lume's shadow is one soft nine-sliced image shared by every surface. A\
+--- console window wants it broad; a stack of notices wants it tight, or off.\
+export type ShadowTokens = {\
+	Enabled: boolean,\
+	Image: string,\
+	Slice: Rect,\
+	Color: Color3,\
+	Transparency: number,\
+	--- How far the shadow bleeds past the panel, in pixels.\
+	Spread: number,\
+	Offset: Vector2,\
+}\
+\
+--- Optional asset ids keyed by tone, applied when a notice sets no icon or\
+--- sound of its own. Empty by default: shipping guessed asset ids is worse\
+--- than shipping none.\
+export type AssetTokens = { [string]: string }\
+\
+export type Theme = {\
+	Name: string,\
+\
+	Color: ColorTokens,\
+	Rich: RichTokens,\
+	Font: FontTokens,\
+	TextSize: TextSizeTokens,\
+	Spacing: SpacingTokens,\
+	Radius: RadiusTokens,\
+	Size: SizeTokens,\
+	Transparency: TransparencyTokens,\
+	Motion: MotionTokens,\
+	Duration: DurationTokens,\
+	Shadow: ShadowTokens,\
+	Icon: AssetTokens,\
+	Sound: AssetTokens,\
+}\
+\
+--- A partial theme: everything optional, deep-merged over the theme it\
+--- extends. This is what `Flare.DefineTheme` takes.\
+export type ThemeOverride = {\
+	Name: string?,\
+\
+	Color: { [string]: Color3 }?,\
+	Rich: { [string]: string }?,\
+	Font: { [string]: Enum.Font }?,\
+	TextSize: { [string]: number }?,\
+	Spacing: { [string]: number }?,\
+	Radius: { [string]: number }?,\
+	Size: { [string]: number }?,\
+	Transparency: { [string]: number }?,\
+	Motion: { [string]: string }?,\
+	Duration: { [string]: number }?,\
+	Shadow: { [string]: any }?,\
+	Icon: AssetTokens?,\
+	Sound: AssetTokens?,\
+}\
+\
+--// configuration --------------------------------------------------------------------\
+export type FlareOptions = {\
+	--- A registered theme name. `\"Default\"` unless you register another.\
+	Theme: string?,\
+	--- Token overrides applied on top of `Theme`, for one-off tweaks that do\
+	--- not deserve a whole registered theme.\
+	Tokens: ThemeOverride?,\
+\
+	--- Render into a Lume app you already have. Everything else about the app\
+	--- — its gui, its layer, its own theme — stays yours.\
+	App: any?,\
+	--- Render into a `ScreenGui` you own, rather than one Flare creates.\
+	Gui: LayerCollector?,\
+	DisplayOrder: number?,\
+\
+	--- Where notices go when they do not say. `\"bottomRight\"` by default.\
+	Anchor: Anchor?,\
+	--- Per-anchor stack cap. Four by default.\
+	Max: number?,\
+	--- Seconds before a notice with no explicit duration expires.\
+	Duration: number?,\
+	--- Per-kind duration overrides, for when one number is not enough.\
+	Durations: { [string]: number }?,\
+	--- Collapse identical notices into one carrying a count.\
+	Group: boolean?,\
+	--- Freeze the countdown while the pointer is over a notice.\
+	Pause: boolean?,\
+	--- Parse markup in bodies and titles by default.\
+	Markup: boolean?,\
+	--- Play sounds at all. Individual notices still need one set.\
+	Sound: boolean?,\
+	--- Show a close button, and let a click outside dismiss.\
+	Dismissible: boolean?,\
+	--- Let notices be dragged around the screen.\
+	Draggable: boolean?,\
+	--- Draw shadows. `false` turns them off everywhere.\
+	Shadow: boolean?,\
+\
+	Width: number?,\
+	--- Between notices in a stack.\
+	Gap: number?,\
+	--- Between the stack and the edge of the screen.\
+	Inset: number?,\
+}\
 \
 export type QueueOptions = {\
 	Max: number?,\
 	Gap: number?,\
 	Group: boolean?,\
 	Pause: boolean?,\
-}\
-\
-export type FlareOptions = {\
-	Theme: string?,\
-	Gui: LayerCollector?,\
-	DisplayOrder: number?,\
-	App: any?,\
-\
-	--- Per-anchor stack cap. Four by default.\
-	Max: number?,\
-	--- Seconds before a notice with no explicit duration expires.\
-	Duration: number?,\
-	--- Collapse identical notices into one with a count.\
-	Group: boolean?,\
-	--- Freeze the countdown while the pointer is over a notice.\
-	Pause: boolean?,\
-	--- Parse markup in bodies by default.\
-	Markup: boolean?,\
-	--- Play `Spec.Sound` when a notice appears.\
-	Sound: boolean?,\
-	Width: number?,\
 }\
 \
 return {}\
@@ -883,26 +1231,42 @@ return {}\
 \
 --- A notice: the chained builder you configure, and the live handle you keep.\
 ---\
---- The same object plays both parts on purpose. Before `:show()` the setters\
---- describe what you want; after it they still work, so `:update(\"…\")` on a\
---- progress bar or `:tone(\"danger\")` on a countdown mutates something already\
+--- The same object plays both parts on purpose. Before `:Show()` the setters\
+--- describe what you want; after it they still work, so `:Update(\"…\")` on a\
+--- progress bar or `:Tone(\"Danger\")` on a countdown mutates something already\
 --- on screen. A builder that becomes inert the moment it is shown is the wrong\
 --- shape for notifications, half of which are alive.\
+---\
+--- Every setter returns the notice, so everything chains and every step of the\
+--- chain is typed:\
+---\
+--- ```lua\
+--- Flare.Toast(\"Saved\"):Ok():Duration(4):Show()\
+--- ```\
 --- @section Core\
 \
 local Types = require(script.Parent.Parent.Types)\
 \
 type Spec = Types.Spec\
 type Result = Types.Result\
+type Tone = Types.Tone\
 \
 local Notice = {}\
 Notice.__index = Notice\
 \
+--- Runtime state. Every one of these is a declared field rather than something\
+--- smuggled in through an `any` cast, so the type checker sees them.\
+---\
+--- **No field name here may match a method name.** An instance field shadows\
+--- its metatable, so a field called `OnShow` would make `notice:OnShow(f)` fail\
+--- with *attempt to call a table value* — which is why the two handler lists\
+--- are `ResolveHandlers` and `ShowHandlers`.\
 export type Fields = {\
 	Spec: Spec,\
+	--- The Flare singleton this notice belongs to.\
 	Flare: any,\
 \
-	--// live state, all nil until shown\
+	--// live state, all empty until shown\
 	Panel: any,\
 	Refs: { [string]: any },\
 	Shown: boolean,\
@@ -911,6 +1275,7 @@ export type Fields = {\
 \
 	Expires: number?,\
 	Paused: boolean,\
+	--- How many notices have collapsed into this one, counting itself.\
 	Count: number,\
 	--- Last whole-second countdown reading painted, so a clock repaints on the\
 	--- second rather than every frame.\
@@ -919,8 +1284,8 @@ export type Fields = {\
 	--- burst of equal notices keeps the order it arrived in.\
 	Order: number,\
 \
-	OnResolve: { (Result) -> () },\
-	OnShow: { () -> () },\
+	ResolveHandlers: { (Result) -> () },\
+	ShowHandlers: { () -> () },\
 	Waiters: { thread },\
 }\
 \
@@ -928,6 +1293,8 @@ export type Notice = typeof(setmetatable({} :: Fields, Notice))\
 \
 --// public api ------------------------------------------------------------------\
 function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice\
+	local defaults = flare.Defaults\
+\
 	local self: Fields = {\
 		Spec = {\
 			Kind = kind,\
@@ -938,7 +1305,7 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice\
 			Image = nil,\
 			Tone = \"Neutral\",\
 \
-			Anchor = flare.Defaults.Anchor,\
+			Anchor = defaults.Anchor,\
 			Duration = nil,\
 			Priority = 0,\
 			Group = nil,\
@@ -946,11 +1313,14 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice\
 			Actions = {},\
 			Choices = {},\
 \
-			Dismissible = true,\
-			Markup = flare.Defaults.Markup,\
-			Pausable = flare.Defaults.Pause,\
+			Dismissible = defaults.Dismissible,\
+			Markup = defaults.Markup,\
+			Pausable = defaults.Pause,\
+			Draggable = defaults.Draggable,\
+			Shadow = nil,\
 			Sound = nil,\
 			Width = nil,\
+			Layer = nil,\
 \
 			Progress = nil,\
 			Indeterminate = nil,\
@@ -977,8 +1347,8 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice\
 		Ticked = nil,\
 		Order = 0,\
 \
-		OnResolve = {},\
-		OnShow = {},\
+		ResolveHandlers = {},\
+		ShowHandlers = {},\
 		Waiters = {},\
 	}\
 \
@@ -986,87 +1356,113 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice\
 end\
 \
 --// content ---------------------------------------------------------------------\
-function Notice.title(self: Notice, text: string): Notice\
+--- A heading above the body.\
+function Notice.Title(self: Notice, text: string): Notice\
 	self.Spec.Title = text\
 \
-	return Notice.refresh(self)\
+	return Notice.Refresh(self)\
 end\
 \
-function Notice.body(self: Notice, text: string): Notice\
+function Notice.Body(self: Notice, text: string): Notice\
 	self.Spec.Body = text\
 \
-	return Notice.refresh(self)\
+	return Notice.Refresh(self)\
 end\
 \
 --- Replaces the body. The name every other notification library uses, and the\
 --- one people reach for on a live handle.\
-function Notice.update(self: Notice, text: string): Notice\
-	return Notice.body(self, text)\
+function Notice.Update(self: Notice, text: string): Notice\
+	return Notice.Body(self, text)\
 end\
 \
-function Notice.icon(self: Notice, asset: string): Notice\
+function Notice.Icon(self: Notice, asset: string): Notice\
 	self.Spec.Icon = asset\
 \
-	return Notice.refresh(self)\
+	return Notice.Refresh(self)\
 end\
 \
-function Notice.image(self: Notice, asset: string): Notice\
+--- A large image, for a reward or an achievement.\
+function Notice.Image(self: Notice, asset: string): Notice\
 	self.Spec.Image = asset\
 \
-	return Notice.refresh(self)\
+	return Notice.Refresh(self)\
+end\
+\
+--- Anything you want to carry along. Flare never reads it — it is there so a\
+--- resolve handler can tell which notice it is looking at.\
+function Notice.Meta(self: Notice, data: { [string]: any }): Notice\
+	self.Spec.Meta = data\
+\
+	return self\
 end\
 \
 --// appearance -------------------------------------------------------------------\
-function Notice.tone(self: Notice, tone: string): Notice\
+function Notice.Tone(self: Notice, tone: string): Notice\
 	--// accepts \"ok\" or \"Ok\", because nobody wants to remember which\
-	self.Spec.Tone = (string.upper(string.sub(tone, 1, 1)) .. string.sub(tone, 2)) :: Types.Tone\
+	self.Spec.Tone = (string.upper(string.sub(tone, 1, 1)) .. string.sub(tone, 2)) :: Tone\
 \
-	return Notice.refresh(self)\
+	return Notice.Refresh(self)\
 end\
 \
-function Notice.info(self: Notice): Notice\
-	return Notice.tone(self, \"Info\")\
+function Notice.Info(self: Notice): Notice\
+	return Notice.Tone(self, \"Info\")\
 end\
 \
-function Notice.ok(self: Notice): Notice\
-	return Notice.tone(self, \"Ok\")\
+function Notice.Ok(self: Notice): Notice\
+	return Notice.Tone(self, \"Ok\")\
 end\
 \
-function Notice.warn(self: Notice): Notice\
-	return Notice.tone(self, \"Warn\")\
+function Notice.Warn(self: Notice): Notice\
+	return Notice.Tone(self, \"Warn\")\
 end\
 \
-function Notice.danger(self: Notice): Notice\
-	return Notice.tone(self, \"Danger\")\
+function Notice.Danger(self: Notice): Notice\
+	return Notice.Tone(self, \"Danger\")\
 end\
 \
-function Notice.accent(self: Notice): Notice\
-	return Notice.tone(self, \"Accent\")\
+function Notice.Accent(self: Notice): Notice\
+	return Notice.Tone(self, \"Accent\")\
 end\
 \
-function Notice.at(self: Notice, anchor: Types.Anchor): Notice\
+--- Which corner (or edge) it appears at. Each anchor has its own queue, so a\
+--- full corner never blocks a banner.\
+function Notice.At(self: Notice, anchor: Types.Anchor): Notice\
 	self.Spec.Anchor = anchor\
 \
 	return self\
 end\
 \
-function Notice.width(self: Notice, pixels: number): Notice\
+function Notice.Width(self: Notice, pixels: number): Notice\
 	self.Spec.Width = pixels\
 \
 	return self\
 end\
 \
---- Turns markup parsing off for this notice, when the body is user-supplied\
---- text that should never be interpreted.\
-function Notice.literal(self: Notice): Notice\
+--- Draws this one on a different Lume layer, for a notice that has to sit\
+--- above or below the rest.\
+function Notice.Layer(self: Notice, layer: string): Notice\
+	self.Spec.Layer = layer\
+\
+	return self\
+end\
+\
+function Notice.Shadow(self: Notice, enabled: boolean): Notice\
+	self.Spec.Shadow = enabled ~= false\
+\
+	return self\
+end\
+\
+--- Turns markup parsing off for this notice, when the body is text somebody\
+--- else wrote and should never be interpreted.\
+function Notice.Literal(self: Notice): Notice\
 	self.Spec.Markup = false\
 \
-	return Notice.refresh(self)\
+	return Notice.Refresh(self)\
 end\
 \
 --// lifetime ---------------------------------------------------------------------\
 --- Seconds on screen. Zero or nil means it stays until dismissed.\
-function Notice.duration(self: Notice, seconds: number?): Notice\
+function Notice.Duration(self: Notice, seconds: number?): Notice\
 	self.Spec.Duration = seconds\
 \
 	if self.Shown and seconds then\
@@ -1076,12 +1472,13 @@ function Notice.duration(self: Notice, seconds: number?): Notice\
 	return self\
 end\
 \
-function Notice.sticky(self: Notice): Notice\
-	return Notice.duration(self, nil)\
+function Notice.Sticky(self: Notice): Notice\
+	return Notice.Duration(self, nil)\
 end\
 \
---- Higher sorts nearer the front and survives the cap for longer.\
-function Notice.priority(self: Notice, value: number): Notice\
+--- Higher sorts nearer the front, and displaces the least important notice on\
+--- screen rather than queueing behind it.\
+function Notice.Priority(self: Notice, value: number): Notice\
 	self.Spec.Priority = value\
 \
 	return self\
@@ -1089,25 +1486,31 @@ end\
 \
 --- Notices sharing a group key collapse into one with a count, instead of\
 --- three identical toasts stacking up.\
-function Notice.group(self: Notice, key: string): Notice\
+function Notice.Group(self: Notice, key: string): Notice\
 	self.Spec.Group = key\
 \
 	return self\
 end\
 \
-function Notice.dismissible(self: Notice, enabled: boolean): Notice\
+function Notice.Dismissible(self: Notice, enabled: boolean): Notice\
 	self.Spec.Dismissible = enabled ~= false\
 \
 	return self\
 end\
 \
-function Notice.pausable(self: Notice, enabled: boolean): Notice\
+function Notice.Pausable(self: Notice, enabled: boolean): Notice\
 	self.Spec.Pausable = enabled ~= false\
 \
 	return self\
 end\
 \
-function Notice.sound(self: Notice, asset: string): Notice\
+function Notice.Draggable(self: Notice, enabled: boolean): Notice\
+	self.Spec.Draggable = enabled ~= false\
+\
+	return self\
+end\
+\
+function Notice.Sound(self: Notice, asset: string): Notice\
 	self.Spec.Sound = asset\
 \
 	return self\
@@ -1115,8 +1518,8 @@ end\
 \
 --// actions ----------------------------------------------------------------------\
 --- Adds a button. Its callback receives this handle, so it can update or\
---- dismiss the notice it came from.\
-function Notice.action(self: Notice, text: string, run: ((Notice) -> boolean?)?, tone: string?): Notice\
+--- dismiss the notice it came from. Returning `false` keeps the notice open.\
+function Notice.Action(self: Notice, text: string, run: ((Notice) -> boolean?)?, tone: string?): Notice\
 	table.insert(self.Spec.Actions, {\
 		Text = text,\
 		Run = run :: any,\
@@ -1124,10 +1527,11 @@ function Notice.action(self: Notice, text: string, run: ((Notice) -> boolean?)?,
 		Primary = #self.Spec.Actions == 0,\
 	})\
 \
-	return Notice.rebuild(self)\
+	return Notice.Rebuild(self)\
 end\
 \
-function Notice.choices(self: Notice, options: { any }): Notice\
+--- The options for a `Choice`. A bare string is its own id.\
+function Notice.Choices(self: Notice, options: { Types.ChoiceLike }): Notice\
 	local out: { Types.Choice } = {}\
 \
 	for index, entry in options do\
@@ -1145,48 +1549,51 @@ function Notice.choices(self: Notice, options: { any }): Notice\
 \
 	self.Spec.Choices = out\
 \
-	return Notice.rebuild(self)\
+	return Notice.Rebuild(self)\
 end\
 \
 --// live state --------------------------------------------------------------------\
 --- Sets a progress bar, 0 to 1. Values above 1 are read as a percentage.\
-function Notice.progress(self: Notice, value: number): Notice\
+function Notice.Progress(self: Notice, value: number): Notice\
 	local raw = tonumber(value) or 0\
 \
 	self.Spec.Progress = math.clamp(if raw > 1 then raw / 100 else raw, 0, 1)\
 	self.Spec.Indeterminate = false\
 \
-	return Notice.refresh(self)\
+	return Notice.Refresh(self)\
 end\
 \
-function Notice.indeterminate(self: Notice, enabled: boolean?): Notice\
+--- A bar that sweeps rather than fills, for work of unknown length.\
+function Notice.Indeterminate(self: Notice, enabled: boolean?): Notice\
 	self.Spec.Indeterminate = enabled ~= false\
 \
-	return Notice.refresh(self)\
+	return Notice.Refresh(self)\
 end\
 \
---- Counts down to a wall-clock deadline.\
-function Notice.until_(self: Notice, clock: number): Notice\
+--- Counts down to a wall-clock deadline, in `os.clock` terms.\
+function Notice.Until(self: Notice, clock: number): Notice\
 	self.Spec.Deadline = clock\
 \
-	return Notice.refresh(self)\
+	return Notice.Refresh(self)\
 end\
 \
 --// prompts -----------------------------------------------------------------------\
-function Notice.placeholder(self: Notice, text: string): Notice\
+function Notice.Placeholder(self: Notice, text: string): Notice\
 	self.Spec.Placeholder = text\
 \
-	return Notice.refresh(self)\
+	return Notice.Refresh(self)\
 end\
 \
-function Notice.default(self: Notice, text: string): Notice\
+--- Pre-fills a prompt's field.\
+function Notice.Default(self: Notice, text: string): Notice\
 	self.Spec.Default = text\
 \
-	return self\
+	return Notice.Refresh(self)\
 end\
 \
---- Pins a notice to a GuiObject rather than to a screen corner.\
-function Notice.attach(self: Notice, target: GuiObject, side: string?): Notice\
+--- Pins the notice to a `GuiObject` instead of a screen corner, so it points\
+--- at the thing it is talking about.\
+function Notice.Attach(self: Notice, target: GuiObject, side: Types.Side?): Notice\
 	self.Spec.Attach = target\
 	self.Spec.Side = side or \"top\"\
 \
@@ -1194,58 +1601,59 @@ function Notice.attach(self: Notice, target: GuiObject, side: string?): Notice\
 end\
 \
 --// callbacks ---------------------------------------------------------------------\
-function Notice.onResolve(self: Notice, handler: (Result) -> ()): Notice\
-	table.insert(self.OnResolve, handler)\
+--- Fires however the notice finishes.\
+function Notice.OnResolve(self: Notice, handler: (Result) -> ()): Notice\
+	table.insert(self.ResolveHandlers, handler)\
 \
 	return self\
 end\
 \
-function Notice.onAccept(self: Notice, handler: (any) -> ()): Notice\
-	return Notice.onResolve(self, function(result)\
+function Notice.OnAccept(self: Notice, handler: (any) -> ()): Notice\
+	return Notice.OnResolve(self, function(result)\
 		if result.Kind == \"Accepted\" or result.Kind == \"Value\" then\
 			handler(result.Value)\
 		end\
 	end)\
 end\
 \
-function Notice.onCancel(self: Notice, handler: () -> ()): Notice\
-	return Notice.onResolve(self, function(result)\
+function Notice.OnCancel(self: Notice, handler: () -> ()): Notice\
+	return Notice.OnResolve(self, function(result)\
 		if result.Kind == \"Cancelled\" then\
 			handler()\
 		end\
 	end)\
 end\
 \
-function Notice.onDismiss(self: Notice, handler: () -> ()): Notice\
-	return Notice.onResolve(self, function(result)\
+function Notice.OnDismiss(self: Notice, handler: () -> ()): Notice\
+	return Notice.OnResolve(self, function(result)\
 		if result.Kind == \"Dismissed\" or result.Kind == \"Expired\" then\
 			handler()\
 		end\
 	end)\
 end\
 \
-function Notice.onShow(self: Notice, handler: () -> ()): Notice\
-	table.insert(self.OnShow, handler)\
+function Notice.OnShow(self: Notice, handler: () -> ()): Notice\
+	table.insert(self.ShowHandlers, handler)\
 \
 	return self\
 end\
 \
 --// control -----------------------------------------------------------------------\
 --- Queues the notice. Returns itself, still live.\
-function Notice.show(self: Notice): Notice\
+function Notice.Show(self: Notice): Notice\
 	self.Flare:Enqueue(self)\
 \
 	return self\
 end\
 \
 --- Dismisses it. `kind` distinguishes a player closing it from it timing out.\
-function Notice.dismiss(self: Notice, kind: string?): Notice\
-	return Notice.resolve(self, { Kind = (kind or \"Dismissed\") :: any })\
+function Notice.Dismiss(self: Notice, kind: Types.ResultKind?): Notice\
+	return Notice.Resolve(self, { Kind = kind or \"Dismissed\" })\
 end\
 \
 --- Finishes the notice with a result, firing every callback and waking anyone\
---- blocked in `await`.\
-function Notice.resolve(self: Notice, result: Result): Notice\
+--- blocked in `Await`.\
+function Notice.Resolve(self: Notice, result: Result): Notice\
 	if self.Done then\
 		return self\
 	end\
@@ -1255,7 +1663,7 @@ function Notice.resolve(self: Notice, result: Result): Notice\
 \
 	self.Flare:Release(self)\
 \
-	for _, handler in self.OnResolve do\
+	for _, handler in self.ResolveHandlers do\
 		local ok, err = pcall(handler, result)\
 \
 		if not ok then\
@@ -1274,15 +1682,15 @@ end\
 \
 --- Blocks until the notice finishes, then returns its result.\
 ---\
---- Shows it first if it has not been shown, so `Flare.confirm(…):await()` is\
+--- Shows it first if it has not been shown, so `Flare.Confirm(…):Await()` is\
 --- one expression rather than two.\
-function Notice.await(self: Notice): Result\
+function Notice.Await(self: Notice): Result\
 	if self.Done then\
 		return self.Result :: Result\
 	end\
 \
 	if not self.Shown then\
-		Notice.show(self)\
+		Notice.Show(self)\
 	end\
 \
 	table.insert(self.Waiters, coroutine.running())\
@@ -1291,31 +1699,33 @@ function Notice.await(self: Notice): Result\
 end\
 \
 --- Marks a progress notice finished and lets it fade.\
-function Notice.finish(self: Notice, message: string?, tone: string?): Notice\
+function Notice.Finish(self: Notice, message: string?, tone: string?): Notice\
 	if message then\
-		Notice.body(self, message)\
+		Notice.Body(self, message)\
 	end\
 \
-	Notice.tone(self, tone or \"Ok\")\
-	Notice.progress(self, 1)\
+	Notice.Tone(self, tone or \"Ok\")\
+	Notice.Progress(self, 1)\
 \
-	return Notice.duration(self, 2)\
+	return Notice.Duration(self, 2)\
 end\
 \
-function Notice.fail(self: Notice, message: string?): Notice\
+--- Marks it failed. Stays longer than a success, because a failure is the one\
+--- you actually have to read.\
+function Notice.Fail(self: Notice, message: string?): Notice\
 	if message then\
-		Notice.body(self, message)\
+		Notice.Body(self, message)\
 	end\
 \
-	Notice.tone(self, \"Danger\")\
-	Notice.indeterminate(self, false)\
+	Notice.Tone(self, \"Danger\")\
+	Notice.Indeterminate(self, false)\
 \
-	return Notice.duration(self, 4)\
+	return Notice.Duration(self, 4)\
 end\
 \
 --// internal ----------------------------------------------------------------------\
 --- Repaints without rebuilding, for a setter that changed only content.\
-function Notice.refresh(self: Notice): Notice\
+function Notice.Refresh(self: Notice): Notice\
 	if self.Shown and not self.Done then\
 		self.Flare:Paint(self)\
 	end\
@@ -1324,7 +1734,7 @@ function Notice.refresh(self: Notice): Notice\
 end\
 \
 --- Rebuilds the whole body, for a setter that changed its structure.\
-function Notice.rebuild(self: Notice): Notice\
+function Notice.Rebuild(self: Notice): Notice\
 	if self.Shown and not self.Done then\
 		self.Flare:Rebuild(self)\
 	end\
@@ -1332,7 +1742,8 @@ function Notice.rebuild(self: Notice): Notice\
 	return self\
 end\
 \
-function Notice.alive(self: Notice): boolean\
+--- Whether it is on screen and unanswered.\
+function Notice.Alive(self: Notice): boolean\
 	return self.Shown and not self.Done\
 end\
 \
@@ -1630,10 +2041,46 @@ local function panelFor(flare: any, notice: Notice): any\
 	panel:setColor(theme.Color.Background)\
 	panel:setTransparency(theme.Transparency.Panel)\
 	panel:setBorder(false)\
-	panel:setShadow(false)\
-	panel:setLayer(\"toast\")\
+	panel:setLayer(spec.Layer or \"toast\")\
 	panel:setWidth(spec.Width or theme.Size.Width)\
-	panel:setDraggable(false)\
+\
+	--// per notice first, then the theme. Lume's shadow is sized for a console\
+	--// window; Flare restyles it tight on Start, so this is a contact shadow\
+	--// rather than the haze a stack of them would otherwise sit in\
+	local shadow = if spec.Shadow ~= nil then spec.Shadow else theme.Shadow.Enabled\
+\
+	panel:setShadow(shadow)\
+\
+	if spec.Draggable then\
+		panel:setDraggable(true, { smooth = true, bounds = true })\
+	else\
+		panel:setDraggable(false)\
+	end\
+\
+	--// nothing else on it is clickable, so the whole notice can be the button\
+	local interactive = #spec.Actions > 0 or #spec.Choices > 0 or spec.Kind == \"Prompt\"\
+\
+	if spec.Dismissible and not interactive then\
+		panel:setActivatable(true)\
+		panel:onActivated(function()\
+			notice:Resolve({ Kind = \"Dismissed\" })\
+		end)\
+	end\
+\
+	--- A notice that fades does not need an ×; one that waits does.\
+	local fades = spec.Duration ~= nil and spec.Duration > 0 or flare.Transient(spec.Kind)\
+\
+	if spec.Dismissible and not fades then\
+		panel:setCloseButton(true)\
+\
+		--// Lume's own close button only hides the panel. Left at that, the\
+		--// notice would sit in the queue holding a slot forever.\
+		panel.scope:add(panel.refs.close.Activated:Connect(function()\
+			notice:Resolve({ Kind = \"Dismissed\" })\
+		end))\
+	else\
+		panel:setCloseButton(false)\
+	end\
 \
 	return panel\
 end\
@@ -1712,7 +2159,7 @@ local function actionRow(panel: any, flare: any, notice: Notice, refs: { [string
 			end\
 \
 			if not keep then\
-				notice:resolve({ Kind = \"Action\", Action = action.Text })\
+				notice:Resolve({ Kind = \"Action\", Action = action.Text })\
 			end\
 		end)\
 	end\
@@ -1821,7 +2268,7 @@ function Kinds.Choice(panel: any, flare: any, notice: Notice, refs: { [string]: 
 	list:setMaxRows(6)\
 	list:setSelectable(true)\
 	list:onActivated(function(item)\
-		notice:resolve({ Kind = \"Value\", Value = item.id })\
+		notice:Resolve({ Kind = \"Value\", Value = item.id })\
 	end)\
 \
 	refs.List = list\
@@ -1840,7 +2287,7 @@ function Kinds.Prompt(panel: any, flare: any, notice: Notice, refs: { [string]: 
 	end\
 \
 	field:onSubmitted(function(text)\
-		notice:resolve({ Kind = \"Value\", Value = text })\
+		notice:Resolve({ Kind = \"Value\", Value = text })\
 	end)\
 \
 	refs.Field = field\
@@ -10980,9 +11427,20 @@ function Stack.reflow(self: Fields & Types.Stack, spec: (MotionSpec | string)?):
 		panel.settled = position\
 		panel:moveTo(position)\
 \
-		local size = panel.instance.AbsoluteSize\
+		--// step by the panel's *target* size, not its current one. AbsoluteSize\
+		--// is zero on the frame a panel is added — Roblox has not laid it out\
+		--// yet — and mid-animation while it grows into place, so stepping by it\
+		--// stacks members on top of each other in both cases. `desired` is the\
+		--// settled layout size, so positions are final immediately and the\
+		--// panels animate into them.\
+		local target = panel.desired\
+		local absolute = panel.instance.AbsoluteSize\
 \
-		cursor += (if vertical then size.Y else size.X) + self.gap\
+		if target.X <= 0 and target.Y <= 0 then\
+			target = absolute\
+		end\
+\
+		cursor += (if vertical then target.Y else target.X) + self.gap\
 	end\
 \
 	return self\
@@ -12071,6 +12529,7 @@ function Panel.new(app: Types.App, preset: Types.Preset?): Panel\
 		stack = nil,\
 		drag = nil,\
 		shadow = nil,\
+		shadowOn = false,\
 	}\
 \
 	local panel = setmetatable(fields, Panel) :: any\
@@ -12081,7 +12540,7 @@ function Panel.new(app: Types.App, preset: Types.Preset?): Panel\
 	--// through every frame of an animation rather than only at the ends\
 	if panel.shadow then\
 		local function track()\
-			Chrome.track(panel.shadow, root, theme.shadow.spread, theme.shadow.offset)\
+			Chrome.track(panel.shadow, root, theme.shadow.spread, theme.shadow.offset, panel.shadowOn)\
 		end\
 \
 		scope:add(root:GetPropertyChangedSignal(\"Size\"):Connect(track))\
@@ -12286,8 +12745,10 @@ function Panel.setBorder(self: Panel, enabled: boolean): Panel\
 end\
 \
 function Panel.setShadow(self: Panel, enabled: boolean): Panel\
+	self.shadowOn = enabled ~= false\
+\
 	if self.shadow then\
-		self.shadow.Visible = enabled ~= false and self.instance.Visible\
+		self.shadow.Visible = self.shadowOn and self.instance.Visible\
 	end\
 \
 	return self\
@@ -12833,7 +13294,7 @@ function Panel.refreshNow(self: Panel): Panel\
 		Panel.reposition(self)\
 	end\
 \
-	Chrome.track(self.shadow, self.instance, theme.shadow.spread, theme.shadow.offset)\
+	Chrome.track(self.shadow, self.instance, theme.shadow.spread, theme.shadow.offset, self.shadowOn)\
 \
 	if self.stack then\
 		self.stack:reflow()\
@@ -13476,7 +13937,13 @@ function Chrome.shadow(app: Types.App, scope: Types.Scope): ImageLabel?\
 end\
 \
 --- Glues a shadow to its panel. Called whenever the panel's geometry changes.\
-function Chrome.track(shadow: ImageLabel?, target: GuiObject, spread: number, offset: Vector2)\
+function Chrome.track(\
+	shadow: ImageLabel?,\
+	target: GuiObject,\
+	spread: number,\
+	offset: Vector2,\
+	enabled: boolean?\
+)\
 	if not shadow then\
 		return\
 	end\
@@ -13485,7 +13952,11 @@ function Chrome.track(shadow: ImageLabel?, target: GuiObject, spread: number, of
 	local anchor = target.AnchorPoint\
 \
 	shadow.AnchorPoint = anchor\
-	shadow.Visible = target.Visible\
+\
+	--// `enabled` is the caller's `setShadow`, and it has to be honoured here:\
+	--// track runs on every layout pass, so without it a shadow turned off\
+	--// would switch itself back on the next time the panel resized\
+	shadow.Visible = target.Visible and enabled ~= false\
 \
 	shadow.Size = UDim2.new(\
 		target.Size.X.Scale,\
@@ -14549,6 +15020,9 @@ export type PanelFields = {\
 	stack: Stack?,\
 	drag: DragHandle?,\
 	shadow: ImageLabel?,\
+	--- What `setShadow` was last told. The shadow tracker reads it, so a\
+	--- shadow turned off stays off across layout passes.\
+	shadowOn: boolean,\
 }\
 \
 export type PanelApi<T> = {\
@@ -14945,11 +15419,13 @@ return {}\
 --- without leaking its overrides into the default.\
 --- @section Themes\
 \
+local Types = require(script.Parent.Types)\
 local Default = require(script.Default)\
 \
 local Themes = {}\
 \
-export type Theme = typeof(Default)\
+export type Theme = Types.Theme\
+export type ThemeOverride = Types.ThemeOverride\
 \
 local registry: { [string]: Theme } = { default = Default }\
 \
@@ -14995,9 +15471,16 @@ function Themes.Resolve(name: string?): Theme\
 	return found\
 end\
 \
-function Themes.Register(name: string, tokens: { [string]: any }, extends: string?): Theme\
+--- A new theme with `overrides` deep-merged in. The receiver is untouched, so\
+--- extending the default never leaks into it.\
+function Themes.Extend(base: Theme, overrides: ThemeOverride): Theme\
+	return merge(base :: any, overrides :: any) :: any\
+end\
+\
+--- Registers a theme under a name, so `Flare.SetTheme` can find it.\
+function Themes.Register(name: string, tokens: ThemeOverride, extends: string?): Theme\
 	local base = if extends then Themes.Resolve(extends) else Default\
-	local built = merge(base :: any, tokens) :: Theme\
+	local built = Themes.Extend(base, tokens)\
 \
 	built.Name = name\
 	registry[string.lower(name)] = built\
@@ -15031,9 +15514,11 @@ return Themes\
 --- look like it came from a different program.\
 --- @section Themes\
 \
+local Types = require(script.Parent.Parent.Types)\
+\
 local rgb = Color3.fromRGB\
 \
-return {\
+local Default: Types.Theme = {\
 	Name = \"Default\",\
 \
 	Color = {\
@@ -15132,7 +15617,29 @@ return {\
 		Reward = 5,\
 		Hint = 4,\
 	},\
+\
+	--// Lume ships one soft nine-sliced shadow shared by every surface, sized\
+	--// for a console window: 22px of bleed on all four sides. On a stack of\
+	--// notices that reads as haze, and neighbouring shadows overlap into a\
+	--// band, so Flare tightens it to a close contact shadow.\
+	Shadow = {\
+		Enabled = true,\
+		Image = \"rbxassetid://1316045217\",\
+		Slice = Rect.new(10, 10, 118, 118),\
+		Color = rgb(0, 0, 0),\
+		Transparency = 0.86,\
+		Spread = 8,\
+		Offset = Vector2.new(0, 2),\
+	},\
+\
+	--// per-tone defaults, applied when a notice sets none of its own. Empty\
+	--// because a guessed asset id is worse than no asset id — point these at\
+	--// your own and every `:Ok()` notice picks the icon up.\
+	Icon = {},\
+	Sound = {},\
 }\
+\
+return Default\
 "},
 }
 
@@ -15189,7 +15696,7 @@ end
 local installed = parent:FindFirstChild(name)
 
 if installed then
-	installed:SetAttribute("FlareVersion", "0.1.0")
+	installed:SetAttribute("FlareVersion", "0.2.0")
 	installed:SetAttribute("FlareInstalledAt", os.time())
 
 	if options.select ~= false then

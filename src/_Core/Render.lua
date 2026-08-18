@@ -59,10 +59,46 @@ local function panelFor(flare: any, notice: Notice): any
 	panel:setColor(theme.Color.Background)
 	panel:setTransparency(theme.Transparency.Panel)
 	panel:setBorder(false)
-	panel:setShadow(false)
-	panel:setLayer("toast")
+	panel:setLayer(spec.Layer or "toast")
 	panel:setWidth(spec.Width or theme.Size.Width)
-	panel:setDraggable(false)
+
+	--// per notice first, then the theme. Lume's shadow is sized for a console
+	--// window; Flare restyles it tight on Start, so this is a contact shadow
+	--// rather than the haze a stack of them would otherwise sit in
+	local shadow = if spec.Shadow ~= nil then spec.Shadow else theme.Shadow.Enabled
+
+	panel:setShadow(shadow)
+
+	if spec.Draggable then
+		panel:setDraggable(true, { smooth = true, bounds = true })
+	else
+		panel:setDraggable(false)
+	end
+
+	--// nothing else on it is clickable, so the whole notice can be the button
+	local interactive = #spec.Actions > 0 or #spec.Choices > 0 or spec.Kind == "Prompt"
+
+	if spec.Dismissible and not interactive then
+		panel:setActivatable(true)
+		panel:onActivated(function()
+			notice:Resolve({ Kind = "Dismissed" })
+		end)
+	end
+
+	--- A notice that fades does not need an ×; one that waits does.
+	local fades = spec.Duration ~= nil and spec.Duration > 0 or flare.Transient(spec.Kind)
+
+	if spec.Dismissible and not fades then
+		panel:setCloseButton(true)
+
+		--// Lume's own close button only hides the panel. Left at that, the
+		--// notice would sit in the queue holding a slot forever.
+		panel.scope:add(panel.refs.close.Activated:Connect(function()
+			notice:Resolve({ Kind = "Dismissed" })
+		end))
+	else
+		panel:setCloseButton(false)
+	end
 
 	return panel
 end
@@ -141,7 +177,7 @@ local function actionRow(panel: any, flare: any, notice: Notice, refs: { [string
 			end
 
 			if not keep then
-				notice:resolve({ Kind = "Action", Action = action.Text })
+				notice:Resolve({ Kind = "Action", Action = action.Text })
 			end
 		end)
 	end
@@ -250,7 +286,7 @@ function Kinds.Choice(panel: any, flare: any, notice: Notice, refs: { [string]: 
 	list:setMaxRows(6)
 	list:setSelectable(true)
 	list:onActivated(function(item)
-		notice:resolve({ Kind = "Value", Value = item.id })
+		notice:Resolve({ Kind = "Value", Value = item.id })
 	end)
 
 	refs.List = list
@@ -269,7 +305,7 @@ function Kinds.Prompt(panel: any, flare: any, notice: Notice, refs: { [string]: 
 	end
 
 	field:onSubmitted(function(text)
-		notice:resolve({ Kind = "Value", Value = text })
+		notice:Resolve({ Kind = "Value", Value = text })
 	end)
 
 	refs.Field = field

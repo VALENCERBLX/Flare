@@ -152,7 +152,7 @@ end
 local installed = parent:FindFirstChild(name)
 
 if installed then
-	installed:SetAttribute("FlareVersion", "0.1.0")
+	installed:SetAttribute("FlareVersion", "0.2.0")
 	installed:SetAttribute("FlareInstalledAt", os.time())
 
 	if options.select ~= false then

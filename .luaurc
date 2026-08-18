@@ -1,0 +1,9 @@
+{
+	"languageMode": "strict",
+	"lint": {
+		"*": true,
+		"LocalUnused": false
+	},
+	"lintErrors": false,
+	"globals": ["game", "workspace", "script", "task", "warn", "typeof"]
+}

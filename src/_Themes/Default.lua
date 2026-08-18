@@ -8,9 +8,11 @@
 --- look like it came from a different program.
 --- @section Themes
 
+local Types = require(script.Parent.Parent.Types)
+
 local rgb = Color3.fromRGB
 
-return {
+local Default: Types.Theme = {
 	Name = "Default",
 
 	Color = {
@@ -109,4 +111,26 @@ return {
 		Reward = 5,
 		Hint = 4,
 	},
+
+	--// Lume ships one soft nine-sliced shadow shared by every surface, sized
+	--// for a console window: 22px of bleed on all four sides. On a stack of
+	--// notices that reads as haze, and neighbouring shadows overlap into a
+	--// band, so Flare tightens it to a close contact shadow.
+	Shadow = {
+		Enabled = true,
+		Image = "rbxassetid://1316045217",
+		Slice = Rect.new(10, 10, 118, 118),
+		Color = rgb(0, 0, 0),
+		Transparency = 0.86,
+		Spread = 8,
+		Offset = Vector2.new(0, 2),
+	},
+
+	--// per-tone defaults, applied when a notice sets none of its own. Empty
+	--// because a guessed asset id is worse than no asset id — point these at
+	--// your own and every `:Ok()` notice picks the icon up.
+	Icon = {},
+	Sound = {},
 }
+
+return Default

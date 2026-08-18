@@ -10,8 +10,8 @@ Four behaviours, in the order they matter.
 Higher sorts nearer the front, and outlives the cap.
 
 ```lua
-Flare.toast("Saved"):show()                    -- priority 0
-Flare.alert("Kicked"):danger():priority(10):show()
+Flare.Toast("Saved"):Show()                    -- priority 0
+Flare.Alert("Kicked"):Danger():Priority(10):Show()
 ```
 
 When the cap is full, a higher-priority arrival **displaces** the least
@@ -29,7 +29,7 @@ identical lines stacking up.
 
 ```lua
 for _ = 1, 3 do
-    Flare.toast("Item picked up"):show()
+    Flare.Toast("Item picked up"):Show()
 end
 -- one notice: "Item picked up  ×3"
 ```
@@ -39,13 +39,13 @@ which catches the common case without asking you to think about it. When that
 is not what you want, name the group yourself:
 
 ```lua
-Flare.toast(`{item.Name} picked up`):group("pickup"):show()
+Flare.Toast(`{item.Name} picked up`):Group("pickup"):Show()
 ```
 
 Merging restarts the original's clock, so a repeating event keeps its notice
 on screen rather than letting it expire on the original schedule. The
 duplicate resolves immediately with `Result.Kind == "Grouped"` and
-`Result.Value` set to the notice it merged into, so an `:await()` on it
+`Result.Value` set to the notice it merged into, so an `:Await()` on it
 returns rather than hanging.
 
 Turn it off per-session with `Flare.Start({ Group = false })`.
@@ -58,7 +58,7 @@ as slots free up — nothing is silently lost.
 ```lua
 Flare.Start({ Max = 2 })
 
-local live, waiting = Flare.count()
+local live, waiting = Flare.Count()
 ```
 
 The cap is per anchor, so a full corner does not block a banner.
@@ -72,14 +72,14 @@ A paused notice has its deadline pushed forward each frame rather than merely
 having its expiry skipped, so hovering holds it indefinitely and letting go
 gives it its full remaining time back.
 
-Opt out per notice with `:pausable(false)`, or per session with
+Opt out per notice with `:Pausable(false)`, or per session with
 `Flare.Start({ Pause = false })`.
 
 ## Clearing
 
 ```lua
-Flare.clear()              -- everything, everywhere
-Flare.clear("bottomRight") -- one anchor
+Flare.Clear()              -- everything, everywhere
+Flare.Clear("bottomRight") -- one anchor
 ```
 
 Each cleared notice resolves with `Result.Kind == "Dismissed"`, so anything

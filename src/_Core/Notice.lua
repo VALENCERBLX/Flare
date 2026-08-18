@@ -2,26 +2,42 @@
 
 --- A notice: the chained builder you configure, and the live handle you keep.
 ---
---- The same object plays both parts on purpose. Before `:show()` the setters
---- describe what you want; after it they still work, so `:update("…")` on a
---- progress bar or `:tone("danger")` on a countdown mutates something already
+--- The same object plays both parts on purpose. Before `:Show()` the setters
+--- describe what you want; after it they still work, so `:Update("…")` on a
+--- progress bar or `:Tone("Danger")` on a countdown mutates something already
 --- on screen. A builder that becomes inert the moment it is shown is the wrong
 --- shape for notifications, half of which are alive.
+---
+--- Every setter returns the notice, so everything chains and every step of the
+--- chain is typed:
+---
+--- ```lua
+--- Flare.Toast("Saved"):Ok():Duration(4):Show()
+--- ```
 --- @section Core
 
 local Types = require(script.Parent.Parent.Types)
 
 type Spec = Types.Spec
 type Result = Types.Result
+type Tone = Types.Tone
 
 local Notice = {}
 Notice.__index = Notice
 
+--- Runtime state. Every one of these is a declared field rather than something
+--- smuggled in through an `any` cast, so the type checker sees them.
+---
+--- **No field name here may match a method name.** An instance field shadows
+--- its metatable, so a field called `OnShow` would make `notice:OnShow(f)` fail
+--- with *attempt to call a table value* — which is why the two handler lists
+--- are `ResolveHandlers` and `ShowHandlers`.
 export type Fields = {
 	Spec: Spec,
+	--- The Flare singleton this notice belongs to.
 	Flare: any,
 
-	--// live state, all nil until shown
+	--// live state, all empty until shown
 	Panel: any,
 	Refs: { [string]: any },
 	Shown: boolean,
@@ -30,6 +46,7 @@ export type Fields = {
 
 	Expires: number?,
 	Paused: boolean,
+	--- How many notices have collapsed into this one, counting itself.
 	Count: number,
 	--- Last whole-second countdown reading painted, so a clock repaints on the
 	--- second rather than every frame.
@@ -38,8 +55,8 @@ export type Fields = {
 	--- burst of equal notices keeps the order it arrived in.
 	Order: number,
 
-	OnResolve: { (Result) -> () },
-	OnShow: { () -> () },
+	ResolveHandlers: { (Result) -> () },
+	ShowHandlers: { () -> () },
 	Waiters: { thread },
 }
 
@@ -47,6 +64,8 @@ export type Notice = typeof(setmetatable({} :: Fields, Notice))
 
 --// public api ------------------------------------------------------------------
 function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice
+	local defaults = flare.Defaults
+
 	local self: Fields = {
 		Spec = {
 			Kind = kind,
@@ -57,7 +76,7 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice
 			Image = nil,
 			Tone = "Neutral",
 
-			Anchor = flare.Defaults.Anchor,
+			Anchor = defaults.Anchor,
 			Duration = nil,
 			Priority = 0,
 			Group = nil,
@@ -65,11 +84,14 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice
 			Actions = {},
 			Choices = {},
 
-			Dismissible = true,
-			Markup = flare.Defaults.Markup,
-			Pausable = flare.Defaults.Pause,
+			Dismissible = defaults.Dismissible,
+			Markup = defaults.Markup,
+			Pausable = defaults.Pause,
+			Draggable = defaults.Draggable,
+			Shadow = nil,
 			Sound = nil,
 			Width = nil,
+			Layer = nil,
 
 			Progress = nil,
 			Indeterminate = nil,
@@ -96,8 +118,8 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice
 		Ticked = nil,
 		Order = 0,
 
-		OnResolve = {},
-		OnShow = {},
+		ResolveHandlers = {},
+		ShowHandlers = {},
 		Waiters = {},
 	}
 
@@ -105,87 +127,113 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice
 end
 
 --// content ---------------------------------------------------------------------
-function Notice.title(self: Notice, text: string): Notice
+--- A heading above the body.
+function Notice.Title(self: Notice, text: string): Notice
 	self.Spec.Title = text
 
-	return Notice.refresh(self)
+	return Notice.Refresh(self)
 end
 
-function Notice.body(self: Notice, text: string): Notice
+function Notice.Body(self: Notice, text: string): Notice
 	self.Spec.Body = text
 
-	return Notice.refresh(self)
+	return Notice.Refresh(self)
 end
 
 --- Replaces the body. The name every other notification library uses, and the
 --- one people reach for on a live handle.
-function Notice.update(self: Notice, text: string): Notice
-	return Notice.body(self, text)
+function Notice.Update(self: Notice, text: string): Notice
+	return Notice.Body(self, text)
 end
 
-function Notice.icon(self: Notice, asset: string): Notice
+function Notice.Icon(self: Notice, asset: string): Notice
 	self.Spec.Icon = asset
 
-	return Notice.refresh(self)
+	return Notice.Refresh(self)
 end
 
-function Notice.image(self: Notice, asset: string): Notice
+--- A large image, for a reward or an achievement.
+function Notice.Image(self: Notice, asset: string): Notice
 	self.Spec.Image = asset
 
-	return Notice.refresh(self)
+	return Notice.Refresh(self)
+end
+
+--- Anything you want to carry along. Flare never reads it — it is there so a
+--- resolve handler can tell which notice it is looking at.
+function Notice.Meta(self: Notice, data: { [string]: any }): Notice
+	self.Spec.Meta = data
+
+	return self
 end
 
 --// appearance -------------------------------------------------------------------
-function Notice.tone(self: Notice, tone: string): Notice
+function Notice.Tone(self: Notice, tone: string): Notice
 	--// accepts "ok" or "Ok", because nobody wants to remember which
-	self.Spec.Tone = (string.upper(string.sub(tone, 1, 1)) .. string.sub(tone, 2)) :: Types.Tone
+	self.Spec.Tone = (string.upper(string.sub(tone, 1, 1)) .. string.sub(tone, 2)) :: Tone
 
-	return Notice.refresh(self)
+	return Notice.Refresh(self)
 end
 
-function Notice.info(self: Notice): Notice
-	return Notice.tone(self, "Info")
+function Notice.Info(self: Notice): Notice
+	return Notice.Tone(self, "Info")
 end
 
-function Notice.ok(self: Notice): Notice
-	return Notice.tone(self, "Ok")
+function Notice.Ok(self: Notice): Notice
+	return Notice.Tone(self, "Ok")
 end
 
-function Notice.warn(self: Notice): Notice
-	return Notice.tone(self, "Warn")
+function Notice.Warn(self: Notice): Notice
+	return Notice.Tone(self, "Warn")
 end
 
-function Notice.danger(self: Notice): Notice
-	return Notice.tone(self, "Danger")
+function Notice.Danger(self: Notice): Notice
+	return Notice.Tone(self, "Danger")
 end
 
-function Notice.accent(self: Notice): Notice
-	return Notice.tone(self, "Accent")
+function Notice.Accent(self: Notice): Notice
+	return Notice.Tone(self, "Accent")
 end
 
-function Notice.at(self: Notice, anchor: Types.Anchor): Notice
+--- Which corner (or edge) it appears at. Each anchor has its own queue, so a
+--- full corner never blocks a banner.
+function Notice.At(self: Notice, anchor: Types.Anchor): Notice
 	self.Spec.Anchor = anchor
 
 	return self
 end
 
-function Notice.width(self: Notice, pixels: number): Notice
+function Notice.Width(self: Notice, pixels: number): Notice
 	self.Spec.Width = pixels
 
 	return self
 end
 
---- Turns markup parsing off for this notice, when the body is user-supplied
---- text that should never be interpreted.
-function Notice.literal(self: Notice): Notice
+--- Draws this one on a different Lume layer, for a notice that has to sit
+--- above or below the rest.
+function Notice.Layer(self: Notice, layer: string): Notice
+	self.Spec.Layer = layer
+
+	return self
+end
+
+function Notice.Shadow(self: Notice, enabled: boolean): Notice
+	self.Spec.Shadow = enabled ~= false
+
+	return self
+end
+
+--- Turns markup parsing off for this notice, when the body is text somebody
+--- else wrote and should never be interpreted.
+function Notice.Literal(self: Notice): Notice
 	self.Spec.Markup = false
 
-	return Notice.refresh(self)
+	return Notice.Refresh(self)
 end
 
 --// lifetime ---------------------------------------------------------------------
 --- Seconds on screen. Zero or nil means it stays until dismissed.
-function Notice.duration(self: Notice, seconds: number?): Notice
+function Notice.Duration(self: Notice, seconds: number?): Notice
 	self.Spec.Duration = seconds
 
 	if self.Shown and seconds then
@@ -195,12 +243,13 @@ function Notice.duration(self: Notice, seconds: number?): Notice
 	return self
 end
 
-function Notice.sticky(self: Notice): Notice
-	return Notice.duration(self, nil)
+function Notice.Sticky(self: Notice): Notice
+	return Notice.Duration(self, nil)
 end
 
---- Higher sorts nearer the front and survives the cap for longer.
-function Notice.priority(self: Notice, value: number): Notice
+--- Higher sorts nearer the front, and displaces the least important notice on
+--- screen rather than queueing behind it.
+function Notice.Priority(self: Notice, value: number): Notice
 	self.Spec.Priority = value
 
 	return self
@@ -208,25 +257,31 @@ end
 
 --- Notices sharing a group key collapse into one with a count, instead of
 --- three identical toasts stacking up.
-function Notice.group(self: Notice, key: string): Notice
+function Notice.Group(self: Notice, key: string): Notice
 	self.Spec.Group = key
 
 	return self
 end
 
-function Notice.dismissible(self: Notice, enabled: boolean): Notice
+function Notice.Dismissible(self: Notice, enabled: boolean): Notice
 	self.Spec.Dismissible = enabled ~= false
 
 	return self
 end
 
-function Notice.pausable(self: Notice, enabled: boolean): Notice
+function Notice.Pausable(self: Notice, enabled: boolean): Notice
 	self.Spec.Pausable = enabled ~= false
 
 	return self
 end
 
-function Notice.sound(self: Notice, asset: string): Notice
+function Notice.Draggable(self: Notice, enabled: boolean): Notice
+	self.Spec.Draggable = enabled ~= false
+
+	return self
+end
+
+function Notice.Sound(self: Notice, asset: string): Notice
 	self.Spec.Sound = asset
 
 	return self
@@ -234,8 +289,8 @@ end
 
 --// actions ----------------------------------------------------------------------
 --- Adds a button. Its callback receives this handle, so it can update or
---- dismiss the notice it came from.
-function Notice.action(self: Notice, text: string, run: ((Notice) -> boolean?)?, tone: string?): Notice
+--- dismiss the notice it came from. Returning `false` keeps the notice open.
+function Notice.Action(self: Notice, text: string, run: ((Notice) -> boolean?)?, tone: string?): Notice
 	table.insert(self.Spec.Actions, {
 		Text = text,
 		Run = run :: any,
@@ -243,10 +298,11 @@ function Notice.action(self: Notice, text: string, run: ((Notice) -> boolean?)?,
 		Primary = #self.Spec.Actions == 0,
 	})
 
-	return Notice.rebuild(self)
+	return Notice.Rebuild(self)
 end
 
-function Notice.choices(self: Notice, options: { any }): Notice
+--- The options for a `Choice`. A bare string is its own id.
+function Notice.Choices(self: Notice, options: { Types.ChoiceLike }): Notice
 	local out: { Types.Choice } = {}
 
 	for index, entry in options do
@@ -264,48 +320,51 @@ function Notice.choices(self: Notice, options: { any }): Notice
 
 	self.Spec.Choices = out
 
-	return Notice.rebuild(self)
+	return Notice.Rebuild(self)
 end
 
 --// live state --------------------------------------------------------------------
 --- Sets a progress bar, 0 to 1. Values above 1 are read as a percentage.
-function Notice.progress(self: Notice, value: number): Notice
+function Notice.Progress(self: Notice, value: number): Notice
 	local raw = tonumber(value) or 0
 
 	self.Spec.Progress = math.clamp(if raw > 1 then raw / 100 else raw, 0, 1)
 	self.Spec.Indeterminate = false
 
-	return Notice.refresh(self)
+	return Notice.Refresh(self)
 end
 
-function Notice.indeterminate(self: Notice, enabled: boolean?): Notice
+--- A bar that sweeps rather than fills, for work of unknown length.
+function Notice.Indeterminate(self: Notice, enabled: boolean?): Notice
 	self.Spec.Indeterminate = enabled ~= false
 
-	return Notice.refresh(self)
+	return Notice.Refresh(self)
 end
 
---- Counts down to a wall-clock deadline.
-function Notice.until_(self: Notice, clock: number): Notice
+--- Counts down to a wall-clock deadline, in `os.clock` terms.
+function Notice.Until(self: Notice, clock: number): Notice
 	self.Spec.Deadline = clock
 
-	return Notice.refresh(self)
+	return Notice.Refresh(self)
 end
 
 --// prompts -----------------------------------------------------------------------
-function Notice.placeholder(self: Notice, text: string): Notice
+function Notice.Placeholder(self: Notice, text: string): Notice
 	self.Spec.Placeholder = text
 
-	return Notice.refresh(self)
+	return Notice.Refresh(self)
 end
 
-function Notice.default(self: Notice, text: string): Notice
+--- Pre-fills a prompt's field.
+function Notice.Default(self: Notice, text: string): Notice
 	self.Spec.Default = text
 
-	return self
+	return Notice.Refresh(self)
 end
 
---- Pins a notice to a GuiObject rather than to a screen corner.
-function Notice.attach(self: Notice, target: GuiObject, side: string?): Notice
+--- Pins the notice to a `GuiObject` instead of a screen corner, so it points
+--- at the thing it is talking about.
+function Notice.Attach(self: Notice, target: GuiObject, side: Types.Side?): Notice
 	self.Spec.Attach = target
 	self.Spec.Side = side or "top"
 
@@ -313,58 +372,59 @@ function Notice.attach(self: Notice, target: GuiObject, side: string?): Notice
 end
 
 --// callbacks ---------------------------------------------------------------------
-function Notice.onResolve(self: Notice, handler: (Result) -> ()): Notice
-	table.insert(self.OnResolve, handler)
+--- Fires however the notice finishes.
+function Notice.OnResolve(self: Notice, handler: (Result) -> ()): Notice
+	table.insert(self.ResolveHandlers, handler)
 
 	return self
 end
 
-function Notice.onAccept(self: Notice, handler: (any) -> ()): Notice
-	return Notice.onResolve(self, function(result)
+function Notice.OnAccept(self: Notice, handler: (any) -> ()): Notice
+	return Notice.OnResolve(self, function(result)
 		if result.Kind == "Accepted" or result.Kind == "Value" then
 			handler(result.Value)
 		end
 	end)
 end
 
-function Notice.onCancel(self: Notice, handler: () -> ()): Notice
-	return Notice.onResolve(self, function(result)
+function Notice.OnCancel(self: Notice, handler: () -> ()): Notice
+	return Notice.OnResolve(self, function(result)
 		if result.Kind == "Cancelled" then
 			handler()
 		end
 	end)
 end
 
-function Notice.onDismiss(self: Notice, handler: () -> ()): Notice
-	return Notice.onResolve(self, function(result)
+function Notice.OnDismiss(self: Notice, handler: () -> ()): Notice
+	return Notice.OnResolve(self, function(result)
 		if result.Kind == "Dismissed" or result.Kind == "Expired" then
 			handler()
 		end
 	end)
 end
 
-function Notice.onShow(self: Notice, handler: () -> ()): Notice
-	table.insert(self.OnShow, handler)
+function Notice.OnShow(self: Notice, handler: () -> ()): Notice
+	table.insert(self.ShowHandlers, handler)
 
 	return self
 end
 
 --// control -----------------------------------------------------------------------
 --- Queues the notice. Returns itself, still live.
-function Notice.show(self: Notice): Notice
+function Notice.Show(self: Notice): Notice
 	self.Flare:Enqueue(self)
 
 	return self
 end
 
 --- Dismisses it. `kind` distinguishes a player closing it from it timing out.
-function Notice.dismiss(self: Notice, kind: string?): Notice
-	return Notice.resolve(self, { Kind = (kind or "Dismissed") :: any })
+function Notice.Dismiss(self: Notice, kind: Types.ResultKind?): Notice
+	return Notice.Resolve(self, { Kind = kind or "Dismissed" })
 end
 
 --- Finishes the notice with a result, firing every callback and waking anyone
---- blocked in `await`.
-function Notice.resolve(self: Notice, result: Result): Notice
+--- blocked in `Await`.
+function Notice.Resolve(self: Notice, result: Result): Notice
 	if self.Done then
 		return self
 	end
@@ -374,7 +434,7 @@ function Notice.resolve(self: Notice, result: Result): Notice
 
 	self.Flare:Release(self)
 
-	for _, handler in self.OnResolve do
+	for _, handler in self.ResolveHandlers do
 		local ok, err = pcall(handler, result)
 
 		if not ok then
@@ -393,15 +453,15 @@ end
 
 --- Blocks until the notice finishes, then returns its result.
 ---
---- Shows it first if it has not been shown, so `Flare.confirm(…):await()` is
+--- Shows it first if it has not been shown, so `Flare.Confirm(…):Await()` is
 --- one expression rather than two.
-function Notice.await(self: Notice): Result
+function Notice.Await(self: Notice): Result
 	if self.Done then
 		return self.Result :: Result
 	end
 
 	if not self.Shown then
-		Notice.show(self)
+		Notice.Show(self)
 	end
 
 	table.insert(self.Waiters, coroutine.running())
@@ -410,31 +470,33 @@ function Notice.await(self: Notice): Result
 end
 
 --- Marks a progress notice finished and lets it fade.
-function Notice.finish(self: Notice, message: string?, tone: string?): Notice
+function Notice.Finish(self: Notice, message: string?, tone: string?): Notice
 	if message then
-		Notice.body(self, message)
+		Notice.Body(self, message)
 	end
 
-	Notice.tone(self, tone or "Ok")
-	Notice.progress(self, 1)
+	Notice.Tone(self, tone or "Ok")
+	Notice.Progress(self, 1)
 
-	return Notice.duration(self, 2)
+	return Notice.Duration(self, 2)
 end
 
-function Notice.fail(self: Notice, message: string?): Notice
+--- Marks it failed. Stays longer than a success, because a failure is the one
+--- you actually have to read.
+function Notice.Fail(self: Notice, message: string?): Notice
 	if message then
-		Notice.body(self, message)
+		Notice.Body(self, message)
 	end
 
-	Notice.tone(self, "Danger")
-	Notice.indeterminate(self, false)
+	Notice.Tone(self, "Danger")
+	Notice.Indeterminate(self, false)
 
-	return Notice.duration(self, 4)
+	return Notice.Duration(self, 4)
 end
 
 --// internal ----------------------------------------------------------------------
 --- Repaints without rebuilding, for a setter that changed only content.
-function Notice.refresh(self: Notice): Notice
+function Notice.Refresh(self: Notice): Notice
 	if self.Shown and not self.Done then
 		self.Flare:Paint(self)
 	end
@@ -443,7 +505,7 @@ function Notice.refresh(self: Notice): Notice
 end
 
 --- Rebuilds the whole body, for a setter that changed its structure.
-function Notice.rebuild(self: Notice): Notice
+function Notice.Rebuild(self: Notice): Notice
 	if self.Shown and not self.Done then
 		self.Flare:Rebuild(self)
 	end
@@ -451,7 +513,8 @@ function Notice.rebuild(self: Notice): Notice
 	return self
 end
 
-function Notice.alive(self: Notice): boolean
+--- Whether it is on screen and unanswered.
+function Notice.Alive(self: Notice): boolean
 	return self.Shown and not self.Done
 end
 

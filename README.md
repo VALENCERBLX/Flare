@@ -13,20 +13,20 @@
 ```lua
 local Flare = require(ReplicatedStorage.Flare)
 
-Flare.toast("Saved"):ok():show()
+Flare.Toast("Saved"):Ok():Show()
 
-Flare.confirm("Delete everything?")
-    :danger()
-    :onAccept(wipe)
-    :show()
+Flare.Confirm("Delete everything?")
+    :Danger()
+    :OnAccept(wipe)
+    :Show()
 
-local job = Flare.progress("Uploading"):show()
+local job = Flare.Progress("Uploading"):Show()
 
-job:progress(0.4)
-job:finish("Uploaded")
+job:Progress(0.4)
+job:Finish("Uploaded")
 ```
 
-No setup call, no provider to mount. The first `:show()` builds the UI; a game
+No setup call, no provider to mount. The first `:Show()` builds the UI; a game
 that never notifies pays nothing for having Flare installed.
 
 ## Thirteen kinds
@@ -40,23 +40,23 @@ They differ in shape, anchor and lifetime. They are driven identically.
 
 ## The builder is the handle
 
-Every setter returns the same object, before and after `:show()`. A builder
+Every setter returns the same object, before and after `:Show()`. A builder
 that goes inert the moment it is shown is the wrong shape for notifications,
 half of which are alive — a progress bar you fill, a countdown that ticks, a
 prompt waiting on an answer.
 
 ```lua
-local notice = Flare.loading("Finding a match"):show()
+local notice = Flare.Loading("Finding a match"):Show()
 
-notice:update("Found 3 players")
-notice:finish("Match starting")
+notice:Update("Found 3 players")
+notice:Finish("Match starting")
 ```
 
-`:await()` blocks and returns the result, so asking a question is one
+`:Await()` blocks and returns the result, so asking a question is one
 expression:
 
 ```lua
-if Flare.confirm("Delete your save?"):danger():await().Kind == "Accepted" then
+if Flare.Confirm("Delete your save?"):Danger():Await().Kind == "Accepted" then
     wipe()
 end
 ```
@@ -77,16 +77,28 @@ One queue per anchor, and four rules that matter in this order:
 The queue draws nothing. It decides membership and order and hands that to the
 renderer, which is why every one of those rules is tested without a DataModel.
 
+## Typed all the way down
+
+```lua
+local function announce(text: string): Flare.Notice
+    return Flare.Toast(text):Ok():Show()
+end
+```
+
+Every setter is declared as returning `Notice`, so a chain stays typed however
+long it gets, and `Flare.Notice`, `Flare.Result`, `Flare.Tone`, `Flare.Anchor`,
+`Flare.Theme` and `Flare.FlareOptions` are all exported for your own signatures.
+
 ## Markup
 
 ```lua
-Flare.toast("*Rin* joined — press `E` to greet"):show()
+Flare.Toast("*Rin* joined — press `E` to greet"):Show()
 ```
 
 `*bold*` `_italic_` `~strike~` `` `code` `` `[ok]tone[/ok]` `[#FF00AA]hex[/]`,
 compiled to RichText. Everything that is not markup is **escaped first**, so a
 player named `<b>Rin</b>` renders as that literal text rather than as bold.
-`:literal()` turns parsing off for a body you did not write.
+`:Literal()` turns parsing off for a body you did not write.
 
 ## Looks
 
@@ -95,12 +107,17 @@ inside it — there is nothing else to install. Pure black surfaces at partial
 transparency, springs rather than tweens, and the same visual language as the
 rest of Valence Libs.
 
-Themes are tokens, and yours can extend the default:
+Themes are tokens — colours, fonts, sizes, radii, transparencies, motion specs,
+durations, shadows, per-tone icons and sounds — and yours can extend the
+default, one line at a time:
 
 ```lua
-Flare.defineTheme("Mine", { Color = { Ok = Color3.fromHex("#7dcfff") } }, "Default")
-Flare.setTheme("Mine")
+Flare.DefineTheme("Mine", { Color = { Ok = Color3.fromHex("#7dcfff") } }, "Default")
+Flare.SetTheme("Mine")
 ```
+
+Shadows are a tight contact shadow rather than Lume's console-sized one, and
+tunable per theme, per session or per notice.
 
 ## Install
 
