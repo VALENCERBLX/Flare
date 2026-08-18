@@ -234,7 +234,9 @@ job:Finish(<span class="st">"Uploaded"</span>)</code></pre></div>
     Group = <span class="kw">true</span>,            <span class="cm">-- collapse duplicates into one with a count</span>
     Pause = <span class="kw">true</span>,            <span class="cm">-- freeze the countdown while hovered</span>
     Markup = <span class="kw">true</span>,           <span class="cm">-- parse *bold* and friends in bodies</span>
-    Sound = <span class="kw">true</span>,
+    Sound = <span class="kw">true</span>,            <span class="cm">-- or an asset id, to give every notice that sound</span>
+    Sounds = { Danger = <span class="st">"rbxassetid://…"</span> },  <span class="cm">-- per tone, or per kind</span>
+    Icons = { Ok = <span class="st">"rbxassetid://…"</span> },       <span class="cm">-- per tone, or per kind</span>
     Dismissible = <span class="kw">true</span>,      <span class="cm">-- click to dismiss, × on the sticky ones</span>
     Draggable = <span class="kw">false</span>,       <span class="cm">-- let them be dragged around</span>
     Shadow = <span class="kw">true</span>,
@@ -338,7 +340,7 @@ Flare.Hint(<span class="st">"Click here to equip"</span>, button, <span class="s
 <p><code>hint</code> pins itself to a <code>GuiObject</code> instead of a screen corner, so it points at the thing it is talking about. The side is <code>top</code>, <code>bottom</code>, <code>left</code> or <code>right</code>.</p>
 <h3>Common setters</h3>
 <p>Every kind takes all of these.</p>
-<p>| Setter | What it does | | --- | --- | | <code>:Title(text)</code> | A heading above the body | | <code>:Body(text)</code> / <code>:Update(text)</code> | The body, live-updatable | | <code>:Icon(asset)</code> / <code>:Image(asset)</code> | A small icon, or a large image | | <code>:Tone(name)</code> | <code>neutral</code> <code>info</code> <code>ok</code> <code>warn</code> <code>danger</code> <code>accent</code> | | <code>:Info()</code> <code>:Ok()</code> <code>:Warn()</code> <code>:Danger()</code> <code>:Accent()</code> | Shorthands for the above | | <code>:At(anchor)</code> | Any of Lume's nine anchors | | <code>:Width(px)</code> | Overrides the theme width | | <code>:Duration(s)</code> / <code>:Sticky()</code> | Lifetime | | <code>:Priority(n)</code> | Higher outlives the cap — see <a href="Queue.md">Queue</a> | | <code>:Group(key)</code> | Collapse duplicates under one key | | <code>:Dismissible(bool)</code> <code>:Pausable(bool)</code> | Player controls | | <code>:Sound(asset)</code> | Played on show | | <code>:Action(text, run, tone)</code> | Adds a button | | <code>:Literal()</code> | Turns markup off for this notice | | <code>:Attach(target, side)</code> | Pins to a GuiObject | | <code>:Draggable(bool)</code> | Lets it be dragged, with Lume's weighted drag | | <code>:Shadow(bool)</code> | Overrides the theme's shadow for this one | | <code>:Layer(name)</code> | Draws it on a different Lume layer | | <code>:Meta(table)</code> | Carries anything you like; Flare never reads it | | <code>:Until(clock)</code> | The deadline a countdown counts to |</p>
+<p>| Setter | What it does | | --- | --- | | <code>:Title(text)</code> | A heading above the body | | <code>:Body(text)</code> / <code>:Update(text)</code> | The body, live-updatable | | <code>:Icon(asset)</code> / <code>:Image(asset)</code> | A small icon, or a large image | | <code>:Tone(name)</code> | <code>neutral</code> <code>info</code> <code>ok</code> <code>warn</code> <code>danger</code> <code>accent</code> | | <code>:Info()</code> <code>:Ok()</code> <code>:Warn()</code> <code>:Danger()</code> <code>:Accent()</code> | Shorthands for the above | | <code>:At(anchor)</code> | Any of Lume's nine anchors | | <code>:Width(px)</code> | Overrides the theme width | | <code>:Duration(s)</code> / <code>:Sticky()</code> | Lifetime | | <code>:Priority(n)</code> | Higher outlives the cap — see <a href="Queue.md">Queue</a> | | <code>:Group(key)</code> | Collapse duplicates under one key | | <code>:Dismissible(bool)</code> <code>:Pausable(bool)</code> | Player controls | | <code>:Sound(asset)</code> | Played on show, beating any theme default | | <code>:Action(text, run, tone)</code> | Adds a button | | <code>:Literal()</code> | Turns markup off for this notice | | <code>:Attach(target, side)</code> | Pins to a GuiObject | | <code>:Draggable(bool)</code> | Lets it be dragged, with Lume's weighted drag | | <code>:Shadow(bool)</code> | Overrides the theme's shadow for this one | | <code>:Layer(name)</code> | Draws it on a different Lume layer | | <code>:Meta(table)</code> | Carries anything you like; Flare never reads it | | <code>:Until(clock)</code> | The deadline a countdown counts to |</p>
 <p>And on a live handle: <code>:Refresh()</code>, <code>:Rebuild()</code>, <code>:Dismiss()</code>, <code>:Resolve(result)</code>, <code>:Await()</code>, <code>:Alive()</code>.</p>
 <p>Every one of them returns the notice and is declared as doing so, so a chain of twenty stays typed all the way down.</p>
 <h3>Dismissing</h3>
@@ -426,18 +428,28 @@ Flare.SetTheme(<span class="st">"Mine"</span>)</code></pre></div>
 Flare.Start({ Tokens = { Shadow = { Spread = <span class="st">14</span> } } })  <span class="cm">-- or broader</span>
 Flare.Toast(<span class="st">"No shadow"</span>):Shadow(<span class="kw">false</span>):Show()           <span class="cm">-- or per notice</span></code></pre></div>
 <p>Point <code>Shadow.Image</code> at your own nine-sliced asset and every notice picks it up.</p>
-<h3>Per-tone icons and sounds</h3>
-<p>Empty by default, because a guessed asset id is worse than none. Fill them in and every notice of that tone gets them without asking:</p>
-<div class="code"><div class="cap">example</div><pre><code>Flare.DefineTheme(<span class="st">"Mine"</span>, {
-    Icon = {
+<h3>Icons and sounds</h3>
+<p>Empty by default, because a guessed asset id is worse than none. Fill them in and every notice picks them up without asking. Straight off <code>Start</code> is the short way:</p>
+<div class="code"><div class="cap">example</div><pre><code>Flare.Start({
+    Icons = {
         Ok = <span class="st">"rbxassetid://1234567"</span>,
         Danger = <span class="st">"rbxassetid://7654321"</span>,
+        Achievement = <span class="st">"rbxassetid://2222222"</span>,
     },
-    Sound = {
+    Sounds = {
         Danger = <span class="st">"rbxassetid://9999999"</span>,
     },
 })</code></pre></div>
-<p>A notice that sets its own <code>:Icon()</code> or <code>:Sound()</code> always wins.</p>
+<p>Or as part of a theme, if they belong to a look:</p>
+<div class="code"><div class="cap">example</div><pre><code>Flare.DefineTheme(<span class="st">"Mine"</span>, {
+    Icon = { Ok = <span class="st">"rbxassetid://1234567"</span> },
+    Sound = { Danger = <span class="st">"rbxassetid://9999999"</span> },
+})</code></pre></div>
+<p>Both tables are keyed by <strong>tone or kind</strong>, and a kind wins — so <code>Achievement</code> can have its own glyph without every <code>Accent</code> notice inheriting it. A notice that sets its own <code>:Icon()</code> or <code>:Sound()</code> beats both.</p>
+<p>One sound for everything:</p>
+<div class="code"><div class="cap">example</div><pre><code>Flare.Start({ Sound = <span class="st">"rbxassetid://1234567"</span> })</code></pre></div>
+<p><code>Sound = false</code> silences the lot, notice-level assets included.</p>
+<p>Notice icons are drawn opaque and tinted to the notice's tone. A large <code>:Image()</code> is treated as artwork instead: painted white, at its own colours. <code>Transparency.Icon</code> is the token if you want them faded.</p>
 <h3>Rendering somewhere else</h3>
 <p>Flare builds its own Lume app by default. Give it one and it uses yours — same theme, same layers, same z-order as the rest of your interface:</p>
 <div class="code"><div class="cap">example</div><pre><code><span class="kw">local</span> app = Lume.app({ name = <span class="st">"Interface"</span> })
@@ -482,6 +494,8 @@ job:Finish(<span class="st">"Uploaded"</span>)</code></pre></div>
 	Pause: boolean,
 	Markup: boolean,
 	Sound: boolean,
+	<span class="cm">--- Played by every notice that names no sound of its own.</span>
+	DefaultSound: string?,
 	Dismissible: boolean,
 	Draggable: boolean,
 	Width: number?,
