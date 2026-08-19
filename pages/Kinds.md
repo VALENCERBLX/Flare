@@ -62,6 +62,13 @@ local colour = Flare.Color("Trail colour", Color3.fromRGB(126, 170, 255)):Await(
 local many = Flare.Number("How many?", 1):Range(1, 99):Await()
 
 local stars = Flare.Rate("How was that round?"):Await()
+
+local spawn = Flare.Dropdown("Spawn where?", { "Base", "Arena", "Docks" }):Await()
+
+local team = Flare.Radio("Which team?", {
+    { Id = "red", Text = "Red", Description = "Attackers" },
+    { Id = "blue", Text = "Blue", Description = "Defenders" },
+}):Await()
 ```
 
 Each resolves with a `Result`:
@@ -74,10 +81,19 @@ Each resolves with a `Result`:
 | `color` | `Value` / `Cancelled` | the `Color3` |
 | `number` | `Value` / `Cancelled` | the number |
 | `rating` | `Value` / `Cancelled` | the score |
+| `dropdown` | `Value` / `Cancelled` | the chosen `Id` |
+| `radio` | `Value` / `Cancelled` | the chosen `Id` |
 
 A choice entry can be a plain string — its text becomes its id — or a table
 with `Id`, `Text`, `Icon` and `Description`. A description sits on its own line
 under the option rather than trailing it, so a sentence has room.
+
+Three kinds ask the same question and differ only in how many options there
+are. `Choice` lays them out as rows you click straight through. `Dropdown` hides
+them behind a click, for a list too long to lay out. `Radio` shows them all with
+a dot beside each, for a few options with consequences that want to be read side
+by side — and unlike `Choice`, both of the latter two need a `Confirm`, so a
+misclick is recoverable.
 
 `Rating` resolves the moment a star is clicked. There is no sensible second
 step after picking four stars, so it does not ask for one.
@@ -167,6 +183,35 @@ It runs between the body and the buttons, and **again on every rebuild** — so
 build inside it rather than mutating, and keep a reference from within if you
 need to change what it made. A builder that errors warns and leaves the rest of
 the notice intact.
+
+Most of Lume's display widgets have a shorthand, so the common cases do not
+need a callback. They stack in the order they are written:
+
+```lua
+Flare.Toast("Server health")
+    :Chart({ 12, 18, 9, 24, 31 })
+    :Meter(64, { Label = "Memory", Low = 50, High = 80, Optimum = "low" })
+    :Table({ { key = "name", weight = 2 }, { key = "ping" } }, rows)
+    :Graph({}, { Unit = "ms", Warn = 16, Fail = 33 })
+    :Tree(nodes)
+    :Spinner("Working")
+    :Chips({ "eu-west" })
+    :Crumbs({ "Home", "Stats" })
+    :Show()
+```
+
+Each leaves its element on `notice.Refs` — `Refs.Chart`, `Refs.Graph`, and so
+on — so a notice can keep feeding a graph while it is on screen:
+
+```lua
+local notice = Flare.Toast("Frame time"):Graph({}, { Unit = "ms", Warn = 16 }):Show()
+
+RunService.RenderStepped:Connect(function(delta)
+    if notice:Alive() then
+        notice.Refs.Graph:push(delta * 1000)
+    end
+end)
+```
 
 `:Avatar(userId, name?)` puts a player's headshot where the icon would go, with
 their initials underneath in case the thumbnail never arrives:

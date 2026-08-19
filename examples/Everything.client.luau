@@ -108,6 +108,8 @@ local function open(author: Player?, message: string?)
 			state.team:set(id)
 		end)
 
+	--- A select hides its options behind a click, which is right for twenty
+	--- countries and wrong for three teams.
 	choosing:select("Render mode"):setOptions({ "Solid", "Wireframe", "Points" })
 
 	choosing:toggle("Wireframe"):setDescription("Draw collision volumes")
@@ -187,6 +189,16 @@ local function open(author: Player?, message: string?)
 
 	--- No axes, no grid — the shape is the whole message.
 	reading:sparkline(load):setHeight(28)
+
+	--- A graph is the same data taken seriously: it colours itself against a
+	--- warning and a failure line, so you read "too slow" rather than a number.
+	local frames = reading:graph("Frame time")
+
+	frames:setUnit("ms"):setThresholds(16, 33):setOptimum("low"):setWindow(40)
+
+	for _, sample in { 9, 11, 14, 12, 18, 35, 22, 13, 10, 12 } do
+		frames:push(sample)
+	end
 
 	reading:spinner("Still working")
 
@@ -289,6 +301,27 @@ local function open(author: Player?, message: string?)
 		end
 	end)
 
+	ask("Dropdown", function()
+		local answer = Flare.Dropdown("Spawn where?", { "Base", "Arena", "Docks", "Observatory" }):Await()
+
+		if answer.Kind == "Value" then
+			Flare.Toast(`Spawning at *{answer.Value}*`):Ok():Show()
+		end
+	end)
+
+	ask("Radio", function()
+		local answer = Flare.Radio("Which team?", {
+			{ Id = "red", Text = "Red", Description = "Attackers" },
+			{ Id = "blue", Text = "Blue", Description = "Defenders" },
+		}, state.team:get()):Await()
+
+		if answer.Kind == "Value" then
+			state.team:set(answer.Value)
+
+			Flare.Toast(`You are on *{answer.Value}*`):Ok():Show()
+		end
+	end)
+
 	ask("Rating", function()
 		local answer = Flare.Rate("How was that round?"):Await()
 
@@ -297,13 +330,50 @@ local function open(author: Player?, message: string?)
 		end
 	end)
 
-	--- The escape hatch. A notice can hold any Lume element at all, which is
-	--- how a toast ends up with a chart in it.
-	ask("A notice with a chart", function()
-		Flare.Toast("Server load")
+	--- Widgets go straight onto a notice. These are shorthands over `:Custom`,
+	--- which is the general form — they stack in the order they are written.
+	ask("A notice full of widgets", function()
+		Flare.Toast("Server health")
+			:Title("Right now")
+			:Chart(load)
+			:Meter(64, { Label = "Memory", Low = 50, High = 80, Optimum = "low" })
+			:Table({
+				{ key = "name", title = "Player", weight = 2 },
+				{ key = "ping", title = "Ping", align = "right" },
+			}, {
+				{ name = "Rin", ping = "42ms" },
+				{ name = "Kai", ping = "88ms" },
+			})
+			:Chips({ "eu-west", "v0.3.1" })
+			:Duration(10)
+			:Show()
+	end)
+
+	--- And a graph a notice keeps feeding while it is up.
+	ask("A notice with a live graph", function()
+		local notice = Flare.Toast("Frame time")
+			:Graph({}, { Unit = "ms", Warn = 16, Fail = 33, Window = 60 })
+			:Duration(10)
+			:Show()
+
+		task.spawn(function()
+			while notice:Alive() do
+				local delta = task.wait()
+
+				if notice.Refs.Graph then
+					notice.Refs.Graph:push(delta * 1000)
+				end
+			end
+		end)
+	end)
+
+	--- The general form, for anything with no shorthand.
+	ask("A notice built by hand", function()
+		Flare.Toast("Scene")
 			:Custom(function(panel)
-				panel:sparkline(load):setHeight(24)
-				panel:meter("Memory"):setRange(0, 100):setBands(50, 80):setOptimum("low"):setValue(64)
+				panel:tree():setNodes({
+					{ id = "world", text = "Workspace", children = { { id = "map", text = "Map" } } },
+				}):expandAll()
 			end)
 			:Duration(8)
 			:Show()

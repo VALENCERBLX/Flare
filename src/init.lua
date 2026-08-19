@@ -513,6 +513,8 @@ function Flare.Transient(kind: string): boolean
 		and kind ~= "Color"
 		and kind ~= "Number"
 		and kind ~= "Rating"
+		and kind ~= "Dropdown"
+		and kind ~= "Radio"
 		and kind ~= "Alert"
 end
 
@@ -830,6 +832,82 @@ function Flare.Rate(body: string?, maximum: number?): Notice
 	end
 
 	notice:Action("Not now", function(handle)
+		handle:Resolve({ Kind = "Cancelled" })
+
+		return false
+	end)
+
+	return notice
+end
+
+--- Asks them to pick from a dropdown. For a list too long to lay out — twenty
+--- countries rather than three teams.
+---
+--- ```lua
+--- local answer = Flare.Dropdown("Spawn where?", { "Base", "Arena", "Docks" }):Await()
+--- ```
+function Flare.Dropdown(body: string?, options: { ChoiceLike }?, initial: string?): Notice
+	local notice = make("Dropdown", body)
+
+	if options then
+		notice:Options(options)
+	end
+
+	if initial then
+		notice.Spec.Default = initial
+	end
+
+	notice:Action("Confirm", function(handle)
+		if not handle.Spec.Default then
+			--// nothing chosen yet: keep it open rather than resolving with nil
+			return false
+		end
+
+		handle:Resolve({ Kind = "Value", Value = handle.Spec.Default })
+
+		return false
+	end)
+
+	notice:Action("Cancel", function(handle)
+		handle:Resolve({ Kind = "Cancelled" })
+
+		return false
+	end)
+
+	return notice
+end
+
+--- Asks them to pick with every option visible at once. For a few options with
+--- consequences, which want to be read side by side.
+---
+--- ```lua
+--- local answer = Flare.Radio("Which team?", {
+---     { Id = "red", Text = "Red", Description = "Attackers" },
+---     { Id = "blue", Text = "Blue", Description = "Defenders" },
+--- }):Await()
+--- ```
+function Flare.Radio(body: string?, options: { ChoiceLike }?, initial: string?): Notice
+	local notice = make("Radio", body)
+
+	if options then
+		notice:Options(options)
+	end
+
+	if initial then
+		notice.Spec.Default = initial
+	end
+
+	notice:Action("Confirm", function(handle)
+		if not handle.Spec.Default then
+			return false
+		end
+
+		handle:Resolve({ Kind = "Value", Value = handle.Spec.Default })
+
+		return false
+	end)
+
+	notice:Action("Cancel", function(handle)
 		handle:Resolve({ Kind = "Cancelled" })
 
 		return false

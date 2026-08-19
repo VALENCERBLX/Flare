@@ -29,7 +29,8 @@ export type Kind =
 	| "Color"
 	| "Number"
 	| "Rating"
-	| "Custom"
+	| "Dropdown"
+	| "Radio"
 	| "Achievement"
 	| "Reward"
 	| "Hint"
@@ -131,14 +132,45 @@ export type Spec = {
 	Step: number?,
 	--- A player whose headshot goes on the notice.
 	UserId: number?,
-	--- Called with the Lume panel while the notice is being built, so any Lume
-	--- element at all can go in a notice. See `Notice:Custom`.
-	Builder: ((panel: any, notice: any) -> ())?,
+	--- Called in order with the Lume panel while the notice is being built, so
+	--- any Lume element at all can go in a notice. See `Notice:Custom`.
+	Builders: { (panel: any, notice: any) -> () },
+	--- What a `Dropdown` or `Radio` notice offers.
+	Options: { Choice },
 	Attach: GuiObject?,
 	Side: Side?,
 
 	--- Anything you want to carry along. Flare never reads it.
 	Meta: { [string]: any }?,
+}
+
+--- What `Notice:Meter` takes beyond the value itself.
+export type MeterOptions = {
+	Label: string?,
+	Minimum: number?,
+	Maximum: number?,
+	--- The thresholds the colour turns on.
+	Low: number?,
+	High: number?,
+	--- `"high"` means high readings are healthy — ammunition, battery. `"low"`
+	--- means low ones are — memory, ping.
+	Optimum: ("high" | "low")?,
+	Format: ((number, number) -> string)?,
+}
+
+--- What `Notice:Graph` takes beyond the samples.
+export type GraphOptions = {
+	Label: string?,
+	Unit: string?,
+	--- The line a sample is unwelcome past, and the one it fails past.
+	Warn: number?,
+	Fail: number?,
+	--- `"low"` means low samples are healthy — frame time, ping.
+	Optimum: ("high" | "low")?,
+	Window: number?,
+	Minimum: number?,
+	Maximum: number?,
+	Height: number?,
 }
 
 --// theme tokens -------------------------------------------------------------------

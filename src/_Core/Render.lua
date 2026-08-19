@@ -391,6 +391,72 @@ function Kinds.Number(panel: any, flare: any, notice: Notice, refs: { [string]: 
 	refs.Stepper = stepper
 end
 
+--- A dropdown in a notice, for picking one of a list too long to lay out.
+function Kinds.Dropdown(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	Kinds.Simple(panel, flare, notice, refs)
+
+	local spec = notice.Spec
+	local select = panel:select()
+
+	select:setFill(true)
+	select:setPlaceholder("Choose…")
+
+	--// Flare capitalises its fields and Lume's select does not
+	local options = {}
+
+	for _, option in spec.Options do
+		table.insert(options, {
+			id = option.Id,
+			text = option.Text,
+			icon = option.Icon,
+			description = option.Description,
+		})
+	end
+
+	select:setOptions(options)
+
+	--// a dropdown is a two-step control — open, then pick — so unlike a rating
+	--// it does not resolve itself. The buttons underneath do that
+	select:onChanged(function(id)
+		spec.Default = id
+	end)
+
+	refs.Select = select
+end
+
+--- A radio group in a notice: every option visible at once.
+function Kinds.Radio(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	Kinds.Simple(panel, flare, notice, refs)
+
+	local spec = notice.Spec
+	local radio = panel:radio()
+
+	radio:setFill(true)
+
+	local options = {}
+
+	for _, option in spec.Options do
+		table.insert(options, {
+			id = option.Id,
+			text = option.Text,
+			icon = option.Icon,
+			description = option.Description,
+		})
+	end
+
+	radio:setOptions(options)
+
+	if spec.Default then
+		radio:setValue(spec.Default)
+	end
+
+	radio:onChanged(function(id)
+		spec.Default = id
+	end)
+
+	refs.Radio = radio
+end
+
 --- Stars in a notice, for asking how it went.
 function Kinds.Rating(panel: any, flare: any, notice: Notice, refs: { [string]: any })
 	Kinds.Simple(panel, flare, notice, refs)
@@ -496,6 +562,8 @@ local BUILDERS: { [string]: (any, any, any, any) -> () } = {
 	Color = Kinds.Color,
 	Number = Kinds.Number,
 	Rating = Kinds.Rating,
+	Dropdown = Kinds.Dropdown,
+	Radio = Kinds.Radio,
 	Achievement = Kinds.Achievement,
 	Reward = Kinds.Achievement,
 }
@@ -509,14 +577,20 @@ function Render.Build(flare: any, notice: Notice): (any, { [string]: any })
 	local panel = panelFor(flare, notice)
 	local refs: { [string]: any } = {}
 
+	--// handed over before the build rather than after it, because a Custom
+	--// builder writing `notice.Refs.Chart` would otherwise write into the
+	--// table this one is about to replace
+	notice.Refs = refs
+
 	local build = BUILDERS[spec.Kind] or Kinds.Simple
 
 	build(panel, flare, notice, refs)
 
 	--// the escape hatch, run between the body and the buttons: whatever Lume
-	--// has, a notice can hold
-	if spec.Builder then
-		local ok, err = pcall(spec.Builder, panel, notice)
+	--// has, a notice can hold. They run in the order they were added, so a
+	--// chart above a meter is written that way round
+	for _, builder in spec.Builders do
+		local ok, err = pcall(builder, panel, notice)
 
 		if not ok then
 			warn(`[Flare] a Custom builder errored: {err}`)

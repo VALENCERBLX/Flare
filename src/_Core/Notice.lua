@@ -105,7 +105,8 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice
 			Maximum = nil,
 			Step = nil,
 			UserId = nil,
-			Builder = nil,
+			Builders = {},
+			Options = {},
 			Attach = nil,
 			Side = nil,
 
@@ -445,6 +446,31 @@ function Notice.Avatar(self: Notice, userId: number, name: string?): Notice
 	return Notice.Rebuild(self)
 end
 
+--- The options a `Dropdown` or `Radio` notice offers. Same shape as `Choices`:
+--- a bare string is its own id.
+function Notice.Options(self: Notice, options: { Types.ChoiceLike }): Notice
+	local out: { Types.Choice } = {}
+
+	for index, entry in options do
+		if type(entry) == "string" then
+			table.insert(out, { Id = entry, Text = entry })
+		else
+			local option = entry :: any
+
+			table.insert(out, {
+				Id = option.Id or option.Text or tostring(index),
+				Text = option.Text or option.Id or "",
+				Icon = option.Icon,
+				Description = option.Description,
+			})
+		end
+	end
+
+	self.Spec.Options = out
+
+	return Notice.Rebuild(self)
+end
+
 --- Hands you the Lume panel while the notice is being built.
 ---
 --- This is the escape hatch, and it is the answer to "can a notice contain a
@@ -461,9 +487,138 @@ end
 --- It runs again on every rebuild, so it must build rather than mutate: keep a
 --- reference from inside if you need to change what it made.
 function Notice.Custom(self: Notice, build: (panel: any, notice: Notice) -> ()): Notice
-	self.Spec.Builder = build :: any
+	table.insert(self.Spec.Builders, build :: any)
 
 	return Notice.Rebuild(self)
+end
+
+--// widgets ---------------------------------------------------------------------
+--- A sparkline under the body. No axes, no grid — the shape is the message.
+---
+--- ```lua
+--- Flare.Toast("Server load"):Chart({ 12, 18, 9, 24, 31 }):Show()
+--- ```
+function Notice.Chart(self: Notice, points: { number }, height: number?): Notice
+	return Notice.Custom(self, function(panel)
+		local spark = panel:sparkline(points)
+
+		spark:setHeight(height or 26)
+		spark:setColor(self.Flare.Theme.Color[self.Spec.Tone] or self.Flare.Theme.Color.Accent)
+
+		self.Refs.Chart = spark
+	end)
+end
+
+--- A level with a colour that turns as it crosses a band. `Low` and `High` are
+--- the thresholds; `Optimum` says which direction is the healthy one.
+function Notice.Meter(self: Notice, value: number, options: Types.MeterOptions?): Notice
+	local settings = options or {}
+
+	return Notice.Custom(self, function(panel)
+		local meter = panel:meter(settings.Label)
+
+		meter:setRange(settings.Minimum or 0, settings.Maximum or 100)
+		meter:setBands(settings.Low, settings.High)
+		meter:setOptimum(settings.Optimum or "high")
+		meter:setValue(value)
+
+		if settings.Format then
+			meter:setFormat(settings.Format)
+		end
+
+		self.Refs.Meter = meter
+	end)
+end
+
+--- A live series with a warning and a failure line. The handle is kept on
+--- `notice.Refs.Graph`, so a notice can keep pushing samples while it is up.
+---
+--- ```lua
+--- local notice = Flare.Toast("Frame time"):Graph({}, { Unit = "ms", Warn = 16, Fail = 33 }):Show()
+---
+--- RunService.RenderStepped:Connect(function(delta)
+---     if notice:Alive() then
+---         notice.Refs.Graph:push(delta * 1000)
+---     end
+--- end)
+--- ```
+function Notice.Graph(self: Notice, samples: { number }?, options: Types.GraphOptions?): Notice
+	local settings = options or {}
+
+	return Notice.Custom(self, function(panel)
+		local graph = panel:graph(settings.Label)
+
+		graph:setThresholds(settings.Warn, settings.Fail)
+		graph:setOptimum(settings.Optimum or "low")
+		graph:setUnit(settings.Unit or "")
+
+		if settings.Window then
+			graph:setWindow(settings.Window)
+		end
+
+		if settings.Minimum or settings.Maximum then
+			graph:setRange(settings.Minimum, settings.Maximum)
+		end
+
+		if settings.Height then
+			graph:setPlotHeight(settings.Height)
+		end
+
+		if samples then
+			graph:setSamples(samples)
+		end
+
+		self.Refs.Graph = graph
+	end)
+end
+
+--- Rows and columns. Column widths are weights, not pixels.
+function Notice.Table(self: Notice, columns: { any }, rows: { any }): Notice
+	return Notice.Custom(self, function(panel)
+		local grid = panel:table()
+
+		grid:setColumns(columns)
+		grid:setRows(rows)
+
+		self.Refs.Table = grid
+	end)
+end
+
+--- A tree, folded to its roots unless `expand` says otherwise.
+function Notice.Tree(self: Notice, nodes: { any }, expand: boolean?): Notice
+	return Notice.Custom(self, function(panel)
+		local tree = panel:tree()
+
+		tree:setNodes(nodes)
+
+		if expand then
+			tree:expandAll()
+		end
+
+		self.Refs.Tree = tree
+	end)
+end
+
+--- A turning ring, for a notice that is waiting on something with no percentage
+--- to report.
+function Notice.Spinner(self: Notice, label: string?): Notice
+	return Notice.Custom(self, function(panel)
+		self.Refs.Spinner = panel:spinner(label)
+	end)
+end
+
+--- A trail of where this notice is about.
+function Notice.Crumbs(self: Notice, crumbs: { any }): Notice
+	return Notice.Custom(self, function(panel)
+		self.Refs.Crumbs = panel:breadcrumb(crumbs)
+	end)
+end
+
+--- A row of chips — tags, filters, whatever the notice is carrying.
+function Notice.Chips(self: Notice, chips: { any }): Notice
+	return Notice.Custom(self, function(panel)
+		self.Refs.Chips = panel:chips():setChips(chips)
+	end)
 end
 
 --- Pins the notice to a `GuiObject` instead of a screen corner, so it points

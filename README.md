@@ -29,24 +29,28 @@ job:Finish("Uploaded")
 No setup call, no provider to mount. The first `:Show()` builds the UI; a game
 that never notifies pays nothing for having Flare installed.
 
-## Sixteen kinds
+## Eighteen kinds
 
 **Core** — `toast` `banner` `alert` `snackbar`
-**Interactive** — `confirm` `prompt` `choice` `color` `number` `rating`
+**Interactive** — `confirm` `prompt` `choice` `dropdown` `radio` `color`
+`number` `rating`
 **Live** — `progress` `loading` `countdown`
 **Rich** — `achievement` `reward` `hint`
 
 They differ in shape, anchor and lifetime. They are driven identically.
 
-And when none of them is the shape you want, `:Custom()` hands you the Lume
-panel mid-build, so a notice can hold any Lume element at all — a chart, a
-table, a tree:
+Any Lume widget can go on any notice, and the common ones have a shorthand:
 
 ```lua
-Flare.Toast("Server load"):Custom(function(panel)
-    panel:sparkline({ 12, 18, 9, 24, 31 }):setHeight(24)
-end):Show()
+Flare.Toast("Server health")
+    :Chart({ 12, 18, 9, 24, 31 })
+    :Meter(64, { Label = "Memory", Low = 50, High = 80, Optimum = "low" })
+    :Graph({}, { Unit = "ms", Warn = 16, Fail = 33 })
+    :Show()
 ```
+
+`:Custom(fn)` is the general form — it hands you the Lume panel mid-build, so a
+notice can hold anything Lume has, including elements of your own.
 
 ## The builder is the handle
 

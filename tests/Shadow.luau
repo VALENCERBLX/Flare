@@ -55,6 +55,8 @@ local KINDS = {
 	"Color",
 	"Number",
 	"Rate",
+	"Dropdown",
+	"Radio",
 	"Progress",
 	"Loading",
 	"Countdown",
