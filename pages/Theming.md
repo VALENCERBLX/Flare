@@ -53,10 +53,15 @@ notices that reads as haze, and neighbours bleed into each other, so Flare
 replaces it with a close contact shadow: 8 pixels, 0.86 transparency, 2 down.
 
 ```lua
-Flare.Start({ Shadow = false })              -- off everywhere
-Flare.Start({ Tokens = { Shadow = { Spread = 14 } } })  -- or broader
-Flare.Toast("No shadow"):Shadow(false):Show()           -- or per notice
+Flare.Start({ Shadow = false })                 -- off everywhere
+Flare.Start({ Shadow = { Spread = 14 } })       -- or broader
+Flare.Toast("No shadow"):Shadow(false):Show()   -- or per notice
 ```
+
+`Shadow` takes a boolean or a table of shadow tokens, and a table is merged
+over the theme's — so setting `Spread` alone leaves the image, colour and
+transparency where they were. `Tokens = { Shadow = … }` does the same thing and
+is the longer way round.
 
 Point `Shadow.Image` at your own nine-sliced asset and every notice picks it
 up.
@@ -79,6 +84,15 @@ Flare.Start({
     },
 })
 ```
+
+`Icon` and `Sound` are accepted as spellings of `Icons` and `Sounds`, since one
+letter between the gate and the table is a poor thing to lose an afternoon to.
+`Sound` still takes a boolean to turn sound off entirely, or a single asset id
+to give every notice the same one.
+
+Keys are matched by tone **or** by kind, and a kind wins — so `Achievement` can
+have its own glyph without every `Accent` notice inheriting it. A notice that
+sets its own `:Icon()` or `:Sound()` beats both.
 
 Or as part of a theme, if they belong to a look:
 

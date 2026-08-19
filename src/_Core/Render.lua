@@ -153,7 +153,9 @@ local function actionRow(panel: any, flare: any, notice: Notice, refs: { [string
 		local button = row:button(action.Text)
 
 		button:setVariant(if action.Primary then "soft" else "ghost")
-		button:setRadius(theme.Radius.Notice - 4)
+		--// buttons sit inside the notice, so they round a little tighter — but
+		--// a theme with square corners must not end up with a negative one
+		button:setRadius(math.max(theme.Radius.Notice - 4, 0))
 
 		if action.Tone then
 			button:setColor(toneColour(theme, action.Tone))

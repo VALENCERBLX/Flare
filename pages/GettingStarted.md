@@ -106,7 +106,7 @@ Flare.Start({
     Icons = { Ok = "rbxassetid://…" },       -- per tone, or per kind
     Dismissible = true,      -- click to dismiss, × on the sticky ones
     Draggable = false,       -- let them be dragged around
-    Shadow = true,
+    Shadow = true,          -- or a table: { Spread = 14, Transparency = 0.9 }
 
     Width = 320,
     Gap = 8,                 -- between notices
@@ -120,6 +120,16 @@ Flare.Start({
 
 Call it again whenever you like — it merges, so changing one setting later does
 not reset the rest, and a raised `Max` reaches queues that already exist.
+
+An option Flare does not recognise warns, and names the closest one it does:
+
+```
+[Flare] Start does not have an option called "Anchr", so it was ignored. Did you mean "Anchor"?
+```
+
+A setting that quietly does nothing is worse than one that complains, so a
+misspelled key says so in the output rather than leaving you to wonder why the
+notices are still in the corner you did not ask for.
 
 ## Types
 

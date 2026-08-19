@@ -224,6 +224,18 @@ export type MotionTokens = {
 --- Default seconds per kind, for kinds that fade on their own.
 export type DurationTokens = { [string]: number }
 
+--- A partial `ShadowTokens`, merged over the theme's. This is what `Shadow`
+--- takes when you pass it a table instead of a boolean.
+export type ShadowOverride = {
+	Enabled: boolean?,
+	Image: string?,
+	Slice: Rect?,
+	Color: Color3?,
+	Transparency: number?,
+	Spread: number?,
+	Offset: Vector2?,
+}
+
 --- Lume's shadow is one soft nine-sliced image shared by every surface. A
 --- console window wants it broad; a stack of notices wants it tight, or off.
 export type ShadowTokens = {
@@ -275,7 +287,7 @@ export type ThemeOverride = {
 	Transparency: { [string]: number }?,
 	Motion: { [string]: string }?,
 	Duration: { [string]: number }?,
-	Shadow: { [string]: any }?,
+	Shadow: ShadowOverride?,
 	Icon: AssetTokens?,
 	Sound: AssetTokens?,
 }
@@ -310,19 +322,26 @@ export type FlareOptions = {
 	--- Parse markup in bodies and titles by default.
 	Markup: boolean?,
 	--- Play sounds at all. Pass a string instead of `true` to give every
-	--- notice that sound unless it names its own.
-	Sound: (boolean | string)?,
-	--- Asset id per tone, played when a notice of that tone appears and sets
-	--- no sound of its own. `{ Ok = "rbxassetid://…" }`.
+	--- notice that sound unless it names its own, or a table to set them per
+	--- tone — the same thing `Sounds` takes, since the two names are one
+	--- letter apart and either spelling should work.
+	Sound: (boolean | string | { [string]: string })?,
+	--- Asset id per tone or kind, played when a notice of that tone appears
+	--- and sets no sound of its own. `{ Ok = "rbxassetid://…" }`. A kind wins
+	--- over a tone, so `Achievement` can have its own without every `Accent`
+	--- notice inheriting it.
 	Sounds: { [string]: string }?,
-	--- Asset id per tone, shown when a notice of that tone sets no icon.
+	--- Asset id per tone or kind, shown when a notice sets no icon of its own.
 	Icons: { [string]: string }?,
+	--- Alias for `Icons`. Both spellings work.
+	Icon: { [string]: string }?,
 	--- Show a close button, and let a click outside dismiss.
 	Dismissible: boolean?,
 	--- Let notices be dragged around the screen.
 	Draggable: boolean?,
-	--- Draw shadows. `false` turns them off everywhere.
-	Shadow: boolean?,
+	--- Draw shadows. `false` turns them off everywhere. A table sets the
+	--- shadow tokens themselves: `Shadow = { Spread = 50, Transparency = 0.7 }`.
+	Shadow: (boolean | ShadowOverride)?,
 
 	Width: number?,
 	--- Between notices in a stack.

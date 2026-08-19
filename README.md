@@ -125,12 +125,23 @@ tunable per theme, per session or per notice.
 
 ```toml
 [dependencies]
-Flare = "valence/flare@0.1.0"
+Flare = "valence/flare@0.2.0"
 ```
 
 **Rojo** — `default.project.json` maps `src/` to `ReplicatedStorage.Flare`.
 
 **Neither** — paste `dist/install.luau` into the Studio command bar.
+
+## Tests
+
+```sh
+lune run scripts/test
+```
+
+`tests/Shim.luau` is a small Roblox stand-in — instances with a real tree,
+events, the datatypes Lume touches, and a clock you step by hand — so the suites
+and the shipped examples actually **run** rather than merely compiling. Every
+bug worth catching in this library so far has been invisible to a syntax check.
 
 ## Docs
 

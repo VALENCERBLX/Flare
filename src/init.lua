@@ -109,6 +109,34 @@ local defaults: Defaults = {
 
 Flare.Defaults = defaults
 
+--// Every key `Start` understands. An option Flare does not know is almost
+--// always a typo for one it does, and swallowing it in silence turns a
+--// one-letter slip into an afternoon of wondering why nothing happened.
+local KnownOptions: { [string]: boolean } = {
+	Theme = true,
+	Tokens = true,
+	App = true,
+	Gui = true,
+	DisplayOrder = true,
+	Anchor = true,
+	Max = true,
+	Duration = true,
+	Durations = true,
+	Group = true,
+	Pause = true,
+	Markup = true,
+	Sound = true,
+	Sounds = true,
+	Icon = true,
+	Icons = true,
+	Dismissible = true,
+	Draggable = true,
+	Shadow = true,
+	Width = true,
+	Gap = true,
+	Inset = true,
+}
+
 local queues: { [string]: Queue.Queue } = {}
 local stacks: { [string]: any } = {}
 local stepping: RBXScriptConnection? = nil
@@ -117,6 +145,74 @@ local gap: number? = nil
 local inset: number? = nil
 
 --// locals -----------------------------------------------------------------------
+--- How many single-character edits separate two strings, giving up once the
+--- answer is past `limit`. Small and iterative rather than clever: option
+--- names are short, and this runs once per unknown key at startup.
+local function distance(a: string, b: string, limit: number): number
+	if a == b then
+		return 0
+	end
+
+	if math.abs(#a - #b) > limit then
+		return limit + 1
+	end
+
+	local previous = table.create(#b + 1)
+
+	for index = 0, #b do
+		previous[index + 1] = index
+	end
+
+	for i = 1, #a do
+		local current = { i }
+		local best = i
+
+		for j = 1, #b do
+			local cost = if a:sub(i, i) == b:sub(j, j) then 0 else 1
+			local value = math.min(current[j] + 1, previous[j + 1] + 1, previous[j] + cost)
+
+			current[j + 1] = value
+			best = math.min(best, value)
+		end
+
+		if best > limit then
+			return limit + 1
+		end
+
+		previous = current
+	end
+
+	return previous[#b + 1]
+end
+
+--- The nearest known option to a misspelled one, if there is a close enough
+--- candidate. Wrong case, a missing plural, and a dropped or doubled letter
+--- between them cover nearly every real miss.
+local function nearest(key: string): string?
+	local lower = key:lower()
+	--// one edit on a short name, two once there is enough word to get lost in
+	local limit = if #key > 6 then 2 else 1
+	local best: string? = nil
+	local bestScore = limit + 1
+
+	for known in KnownOptions do
+		local candidate = known:lower()
+
+		if candidate == lower .. "s" or lower == candidate .. "s" then
+			return known
+		end
+
+		local score = distance(lower, candidate, limit)
+
+		if score < bestScore then
+			best = known
+			bestScore = score
+		end
+	end
+
+	return best
+end
+
 local function queueFor(anchor: string): Queue.Queue
 	local existing = queues[anchor]
 
@@ -248,17 +344,33 @@ end
 function Flare.Start(options: FlareOptions?): typeof(Flare)
 	local settings = options or {}
 
+	for key in settings do
+		if not KnownOptions[key] then
+			local guess = nearest(key)
+
+			warn(
+				`[Flare] Start does not have an option called "{key}", so it was ignored.`
+					.. if guess then ` Did you mean "{guess}"?` else ""
+			)
+		end
+	end
+
 	local theme = Themes.Resolve(settings.Theme)
 
 	if settings.Tokens then
 		theme = Themes.Extend(theme, settings.Tokens)
 	end
 
-	if settings.Shadow ~= nil then
-		theme = Themes.Extend(theme, { Shadow = { Enabled = settings.Shadow } })
-	end
+	local shadow = settings.Shadow
 
-	Flare.Theme = theme
+	if type(shadow) == "boolean" then
+		theme = Themes.Extend(theme, { Shadow = { Enabled = shadow } })
+	elseif type(shadow) == "table" then
+		--// `Shadow = { Spread = 50 }` is what someone reaching for a broader
+		--// shadow writes. Read only as an on/off gate it was merely truthy,
+		--// and the number they came for was dropped on the floor.
+		theme = Themes.Extend(theme, { Shadow = shadow })
+	end
 
 	if settings.Anchor then
 		defaults.Anchor = settings.Anchor
@@ -288,29 +400,40 @@ function Flare.Start(options: FlareOptions?): typeof(Flare)
 		defaults.Markup = settings.Markup
 	end
 
+	--// `Sound` is the gate, `Sounds` is the table of assets, and one letter
+	--// stands between them. `Icon` and `Icons` are the same trap. Both
+	--// spellings are accepted rather than left to fail quietly.
+	local sounds = settings.Sounds
+	local icons = settings.Icons or settings.Icon
+
 	if settings.Sound ~= nil then
-		--// a string is the sound itself, not a gate: `Sound = "rbxassetid://…"`
-		--// is what people write, and silently treating it as `true` was worse
-		--// than either reading
-		if type(settings.Sound) == "string" then
+		local sound = settings.Sound
+
+		if type(sound) == "string" then
+			--// a string is the sound itself, not a gate:
+			--// `Sound = "rbxassetid://…"` is what people write, and silently
+			--// treating it as `true` was worse than either reading
 			defaults.Sound = true
-			defaults.DefaultSound = settings.Sound
+			defaults.DefaultSound = sound
+		elseif type(sound) == "table" then
+			--// read as a gate, a table is not `true`, so `Sound = { Danger = … }`
+			--// used to turn every sound off — the exact opposite of the ask
+			sounds = sound
+			defaults.Sound = true
 		else
-			defaults.Sound = settings.Sound == true
+			defaults.Sound = sound == true
 		end
 	end
 
-	if settings.Sounds then
-		theme = Themes.Extend(theme, { Sound = settings.Sounds })
-
-		Flare.Theme = theme
+	if sounds then
+		theme = Themes.Extend(theme, { Sound = sounds })
 	end
 
-	if settings.Icons then
-		theme = Themes.Extend(theme, { Icon = settings.Icons })
-
-		Flare.Theme = theme
+	if icons then
+		theme = Themes.Extend(theme, { Icon = icons })
 	end
+
+	Flare.Theme = theme
 
 	if settings.Dismissible ~= nil then
 		defaults.Dismissible = settings.Dismissible
@@ -343,16 +466,16 @@ function Flare.Start(options: FlareOptions?): typeof(Flare)
 	--// Lume's shadow is sized for a console window — 22px of bleed on every
 	--// side. On a stack of notices that reads as haze, and neighbours bleed
 	--// into each other, so Flare's own tokens replace it wholesale.
-	local shadow = theme.Shadow
+	local shadows = theme.Shadow
 
 	Flare.App:restyle({
 		shadow = {
-			image = if shadow.Enabled then shadow.Image else "",
-			slice = shadow.Slice,
-			color = shadow.Color,
-			transparency = shadow.Transparency,
-			spread = shadow.Spread,
-			offset = shadow.Offset,
+			image = if shadows.Enabled then shadows.Image else "",
+			slice = shadows.Slice,
+			color = shadows.Color,
+			transparency = shadows.Transparency,
+			spread = shadows.Spread,
+			offset = shadows.Offset,
 		},
 		space = {
 			lg = inset or theme.Spacing.Inset,
