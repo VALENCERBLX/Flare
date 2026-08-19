@@ -475,14 +475,20 @@ local function newInstance(className: string, autoSignal: boolean?)
 		return changed[name]
 	end
 
-	function methods.Play(self)
-		props.IsPlaying = true
+	--// only a Sound gets Play/Stop. Defining them on every instance meant a
+	--// Tween's own Play was shadowed by this one, so tweens were created,
+	--// "played", and never moved — and every test that watched an animated
+	--// value failed for a reason that had nothing to do with Lume.
+	if className == "Sound" then
+		function methods.Play(self)
+			props.IsPlaying = true
 
-		table.insert(Shim.played, props.SoundId)
-	end
+			table.insert(Shim.played, props.SoundId)
+		end
 
-	function methods.Stop(self)
-		props.IsPlaying = false
+		function methods.Stop(self)
+			props.IsPlaying = false
+		end
 	end
 
 	function methods.Clone(self)
@@ -612,13 +618,74 @@ end
 
 local TweenService = service("TweenService")
 
-function TweenService.Create()
+--// tweens interpolate over the driven clock, so a test can step halfway
+--// through one and see a value in between. Snapping straight to the goal would
+--// make "it animates" and "it teleports" look identical, which is exactly the
+--// distinction Lume's motion work is about.
+function TweenService.Create(self, instance, info, goals)
 	local tween = newInstance("Tween")
-
-	function tween.Play() end
-	function tween.Cancel() end
+	local starts = {}
+	local elapsed = 0
+	local running = false
+	local connection
 
 	tween.Completed = signal()
+
+	local function lerp(from, to, alpha)
+		if type(from) == "number" and type(to) == "number" then
+			return from + (to - from) * alpha
+		end
+
+		if type(to) == "table" and type(from) == "table" and from.Lerp then
+			return from:Lerp(to, alpha)
+		end
+
+		--// anything the shim cannot interpolate lands at the end, which is
+		--// still better than never arriving
+		return if alpha >= 1 then to else from
+	end
+
+	function tween.Play()
+		if running then
+			return
+		end
+
+		running = true
+		elapsed = 0
+
+		for property in goals do
+			starts[property] = instance[property]
+		end
+
+		connection = RunService.Heartbeat:Connect(function(delta)
+			elapsed += delta or 1 / 60
+
+			local duration = math.max(info and info.Time or 0, 1e-6)
+			local alpha = math.clamp(elapsed / duration, 0, 1)
+
+			for property, goal in goals do
+				instance[property] = lerp(starts[property], goal, alpha)
+			end
+
+			if alpha >= 1 then
+				running = false
+
+				connection:Disconnect()
+
+				tween.Completed:Fire(enums.PlaybackState.Completed)
+			end
+		end)
+	end
+
+	function tween.Cancel()
+		running = false
+
+		if connection then
+			connection:Disconnect()
+		end
+	end
+
+	tween.Pause = tween.Cancel
 
 	return tween
 end
@@ -973,6 +1040,9 @@ Shim.PlayerGui = playerGui
 Shim.Instance = Instance3
 Shim.Color3 = Color3Lib
 Shim.Vector2 = Vector2Lib
+Shim.Vector3 = environment.Vector3
+Shim.Rect = environment.Rect
+Shim.UDim2 = environment.UDim2
 Shim.Enum = enums
 Shim.task = scheduler
 

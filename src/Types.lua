@@ -28,6 +28,8 @@ export type Kind =
 	| "Countdown"
 	| "Color"
 	| "Number"
+	| "Rating"
+	| "Custom"
 	| "Achievement"
 	| "Reward"
 	| "Hint"
@@ -127,6 +129,11 @@ export type Spec = {
 	Minimum: number?,
 	Maximum: number?,
 	Step: number?,
+	--- A player whose headshot goes on the notice.
+	UserId: number?,
+	--- Called with the Lume panel while the notice is being built, so any Lume
+	--- element at all can go in a notice. See `Notice:Custom`.
+	Builder: ((panel: any, notice: any) -> ())?,
 	Attach: GuiObject?,
 	Side: Side?,
 

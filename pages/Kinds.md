@@ -60,6 +60,8 @@ local pick = Flare.Choice("Where to?", {
 local colour = Flare.Color("Trail colour", Color3.fromRGB(126, 170, 255)):Await()
 
 local many = Flare.Number("How many?", 1):Range(1, 99):Await()
+
+local stars = Flare.Rate("How was that round?"):Await()
 ```
 
 Each resolves with a `Result`:
@@ -71,10 +73,14 @@ Each resolves with a `Result`:
 | `choice` | `Value` / `Dismissed` | the chosen `Id` |
 | `color` | `Value` / `Cancelled` | the `Color3` |
 | `number` | `Value` / `Cancelled` | the number |
+| `rating` | `Value` / `Cancelled` | the score |
 
 A choice entry can be a plain string — its text becomes its id — or a table
 with `Id`, `Text`, `Icon` and `Description`. A description sits on its own line
 under the option rather than trailing it, so a sentence has room.
+
+`Rating` resolves the moment a star is clicked. There is no sensible second
+step after picking four stars, so it does not ask for one.
 
 `Number` puts a stepper in a notice — minus, the number, plus — rather than a
 text field, because a quantity has a floor, a ceiling and a step, and none of
@@ -142,6 +148,32 @@ Flare.Hint("Click here to equip", button, "top"):Show()
 `hint` pins itself to a `GuiObject` instead of a screen corner, so it points
 at the thing it is talking about. The side is `top`, `bottom`, `left` or
 `right`.
+
+## Anything else
+
+`:Custom()` hands you the Lume panel while the notice is being built, which is
+the answer to "can a notice contain a…": whatever Lume has.
+
+```lua
+Flare.Toast("Server load")
+    :Custom(function(panel)
+        panel:sparkline({ 12, 18, 9, 24, 31 }):setHeight(24)
+        panel:meter("Memory"):setRange(0, 100):setBands(50, 80):setOptimum("low"):setValue(64)
+    end)
+    :Show()
+```
+
+It runs between the body and the buttons, and **again on every rebuild** — so
+build inside it rather than mutating, and keep a reference from within if you
+need to change what it made. A builder that errors warns and leaves the rest of
+the notice intact.
+
+`:Avatar(userId, name?)` puts a player's headshot where the icon would go, with
+their initials underneath in case the thumbnail never arrives:
+
+```lua
+Flare.Toast(`*{player.DisplayName}* joined`):Avatar(player.UserId, player.DisplayName):Show()
+```
 
 ## Common setters
 

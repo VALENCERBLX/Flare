@@ -104,6 +104,8 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice
 			Minimum = nil,
 			Maximum = nil,
 			Step = nil,
+			UserId = nil,
+			Builder = nil,
 			Attach = nil,
 			Side = nil,
 
@@ -426,6 +428,42 @@ function Notice.Step(self: Notice, step: number): Notice
 	end
 
 	return Notice.Refresh(self)
+end
+
+--- Puts a player's headshot on the notice, in place of an icon.
+---
+--- Requested through `rbxthumb://`, so nothing yields and nothing has to be
+--- fetched before the notice can appear.
+function Notice.Avatar(self: Notice, userId: number, name: string?): Notice
+	self.Spec.UserId = userId
+
+	if name then
+		self.Spec.Meta = self.Spec.Meta or {}
+		self.Spec.Meta.AvatarName = name
+	end
+
+	return Notice.Rebuild(self)
+end
+
+--- Hands you the Lume panel while the notice is being built.
+---
+--- This is the escape hatch, and it is the answer to "can a notice contain a
+--- ...": yes, whatever Lume has. A tree, a table, a sparkline, three of your
+--- own elements. The callback runs during the build, after the body and before
+--- the buttons, and anything it returns is ignored.
+---
+--- ```lua
+--- Flare.Toast("Server load"):Custom(function(panel)
+---     panel:sparkline({ 4, 9, 6, 12, 7 }):setHeight(24)
+--- end)
+--- ```
+---
+--- It runs again on every rebuild, so it must build rather than mutate: keep a
+--- reference from inside if you need to change what it made.
+function Notice.Custom(self: Notice, build: (panel: any, notice: Notice) -> ()): Notice
+	self.Spec.Builder = build :: any
+
+	return Notice.Rebuild(self)
 end
 
 --- Pins the notice to a `GuiObject` instead of a screen corner, so it points

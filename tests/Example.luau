@@ -6,9 +6,23 @@
 
 local process = require("@lune/process")
 
+local fs = require("@lune/fs")
+
 local Shim = require("./Shim")
 
 local Flare = Shim.load("./src", "Flare")
+
+--// an example may reach for Lume directly, or for the RemoteEvent the
+--// showcase is opened by, so the place it expects has to exist
+Shim.load("../Lume/src", "Lume")
+
+local Kek = Shim.Instance.new("RemoteEvent")
+
+Kek.Name = "Kek"
+Kek.Parent = Shim.services.ReplicatedStorage
+Kek.OnClientEvent = Shim.signal()
+
+function Kek.FireServer() end
 
 local failed = 0
 
@@ -19,7 +33,7 @@ local function answer()
 		if notice.Shown and not notice.Resolved then
 			local kind = notice.Spec.Kind
 
-			if kind == "Confirm" or kind == "Prompt" or kind == "Choice" or kind == "Color" or kind == "Number" then
+			if kind == "Confirm" or kind == "Prompt" or kind == "Choice" or kind == "Color" or kind == "Number" or kind == "Rating" then
 				notice:Resolve({ Kind = "Dismissed" })
 			end
 		end
@@ -81,8 +95,19 @@ local function run(path: string, name: string)
 	print(`  ok    {name}`)
 end
 
-run("./examples/EveryKind.client.luau", "EveryKind")
-run("./examples/Showcase.client.luau", "Showcase")
+local names = {}
+
+for _, entry in fs.readDir("examples") do
+	if entry:match("%.luau$") then
+		table.insert(names, entry)
+	end
+end
+
+table.sort(names)
+
+for _, entry in names do
+	run(`./examples/{entry}`, entry:match("^(.*)%.client%.luau$") or entry)
+end
 
 if failed > 0 then
 	print(`Examples: {failed} failed`)

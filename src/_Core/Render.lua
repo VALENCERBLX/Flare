@@ -215,7 +215,19 @@ function Kinds.Simple(panel: any, flare: any, notice: Notice, refs: { [string]: 
 
 	refs.Bar = bar
 
-	if spec.Icon then
+	--// a face beats a glyph: if the notice is about a player, that is what the
+	--// eye should land on
+	if spec.UserId then
+		local avatar = row:avatar(spec.UserId)
+
+		avatar:setDiameter(theme.Size.Icon + 10)
+
+		if spec.Meta and spec.Meta.AvatarName then
+			avatar:setName(spec.Meta.AvatarName)
+		end
+
+		refs.Avatar = avatar
+	elseif spec.Icon then
 		local icon = row:icon(spec.Icon)
 
 		icon:setIconSize(theme.Size.Icon)
@@ -379,6 +391,36 @@ function Kinds.Number(panel: any, flare: any, notice: Notice, refs: { [string]: 
 	refs.Stepper = stepper
 end
 
+--- Stars in a notice, for asking how it went.
+function Kinds.Rating(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	Kinds.Simple(panel, flare, notice, refs)
+
+	local spec = notice.Spec
+	local rating = panel:rating()
+
+	rating:setStarSize(flare.Theme.TextSize.Big)
+
+	if spec.Maximum then
+		rating:setMaximum(spec.Maximum)
+	end
+
+	if spec.Number then
+		rating:setValue(spec.Number)
+	end
+
+	--// a rating answers itself: there is no sensible second step after
+	--// picking four stars, so picking resolves the notice
+	rating:onChanged(function(score)
+		spec.Number = score
+
+		if score > 0 then
+			notice:Resolve({ Kind = "Value", Value = score })
+		end
+	end)
+
+	refs.Rating = rating
+end
+
 --- Big, centred, and celebratory. The one kind that is allowed to interrupt.
 function Kinds.Achievement(panel: any, flare: any, notice: Notice, refs: { [string]: any })
 	local theme = flare.Theme
@@ -453,6 +495,7 @@ local BUILDERS: { [string]: (any, any, any, any) -> () } = {
 	Prompt = Kinds.Prompt,
 	Color = Kinds.Color,
 	Number = Kinds.Number,
+	Rating = Kinds.Rating,
 	Achievement = Kinds.Achievement,
 	Reward = Kinds.Achievement,
 }
@@ -469,6 +512,17 @@ function Render.Build(flare: any, notice: Notice): (any, { [string]: any })
 	local build = BUILDERS[spec.Kind] or Kinds.Simple
 
 	build(panel, flare, notice, refs)
+
+	--// the escape hatch, run between the body and the buttons: whatever Lume
+	--// has, a notice can hold
+	if spec.Builder then
+		local ok, err = pcall(spec.Builder, panel, notice)
+
+		if not ok then
+			warn(`[Flare] a Custom builder errored: {err}`)
+		end
+	end
+
 	actionRow(panel, flare, notice, refs)
 
 	--// a banner spans its edge rather than sitting in a corner

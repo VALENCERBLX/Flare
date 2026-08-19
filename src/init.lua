@@ -512,6 +512,7 @@ function Flare.Transient(kind: string): boolean
 		and kind ~= "Choice"
 		and kind ~= "Color"
 		and kind ~= "Number"
+		and kind ~= "Rating"
 		and kind ~= "Alert"
 end
 
@@ -807,6 +808,28 @@ function Flare.Number(body: string?, initial: number?): Notice
 	end)
 
 	notice:Action("Cancel", function(handle)
+		handle:Resolve({ Kind = "Cancelled" })
+
+		return false
+	end)
+
+	return notice
+end
+
+--- Asks for a score out of five. Resolves the moment a star is clicked —
+--- there is no sensible second step after picking four stars.
+---
+--- ```lua
+--- local answer = Flare.Rate("How was that round?"):Await()
+--- ```
+function Flare.Rate(body: string?, maximum: number?): Notice
+	local notice = make("Rating", body)
+
+	if maximum then
+		notice.Spec.Maximum = maximum
+	end
+
+	notice:Action("Not now", function(handle)
 		handle:Resolve({ Kind = "Cancelled" })
 
 		return false
