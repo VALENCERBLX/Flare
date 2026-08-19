@@ -44,13 +44,13 @@ end
 
 Flare.Start()
 
---// the buttons say what you told them to ------------------------------------
-local asked = Flare.Confirm("Switch to your other character?"):Title("Switch character?"):Labels("Switch", "Stay")
+--// a Confirm arrives with its own two buttons -------------------------------
+local asked = Flare.Confirm("Switch to your other character?"):Title("Switch character?")
 
-check("first button relabelled", asked.Spec.Actions[1].Text == "Switch", asked.Spec.Actions[1].Text)
-check("second button relabelled", asked.Spec.Actions[2].Text == "Stay", asked.Spec.Actions[2].Text)
-check("still only two buttons", #asked.Spec.Actions == 2, `{#asked.Spec.Actions}`)
-check("the first is still primary", asked.Spec.Actions[1].Primary == true)
+check("two buttons", #asked.Spec.Actions == 2, `{#asked.Spec.Actions}`)
+check("the first says Confirm", asked.Spec.Actions[1].Text == "Confirm", asked.Spec.Actions[1].Text)
+check("the second says Cancel", asked.Spec.Actions[2].Text == "Cancel", asked.Spec.Actions[2].Text)
+check("the first is primary", asked.Spec.Actions[1].Primary == true)
 
 --// and still resolve the way a Confirm does ---------------------------------
 local answer
@@ -62,17 +62,17 @@ coroutine.resume(thread)
 Shim.step()
 
 check("Await blocks until answered", answer == nil)
-check("Switch is on screen", press("Switch"))
+check("Confirm is on screen", press("Confirm"))
 
 Shim.step()
 
 check("Await returned", answer ~= nil)
-check("relabelling kept Accepted", answer and answer.Kind == "Accepted", answer and answer.Kind)
-check("relabelling kept the value", answer and answer.Value == true)
+check("Confirm accepts", answer and answer.Kind == "Accepted", answer and answer.Kind)
+check("Accepted carries true", answer and answer.Value == true)
 
 --// the other button ----------------------------------------------------------
 local declined
-local second = Flare.Confirm("Switch to your other character?"):Labels("Switch", "Stay")
+local second = Flare.Confirm("Switch to your other character?")
 
 thread = coroutine.create(function()
 	declined = second:Await()
@@ -80,15 +80,15 @@ end)
 
 coroutine.resume(thread)
 Shim.step()
-press("Stay")
+press("Cancel")
 Shim.step()
 
-check("Stay cancels", declined and declined.Kind == "Cancelled", declined and declined.Kind)
+check("Cancel cancels", declined and declined.Kind == "Cancelled", declined and declined.Kind)
 check("Cancelled carries false", declined and declined.Value == false)
 
 --// dismissing without answering ------------------------------------------------
 local ignored
-local third = Flare.Confirm("Switch to your other character?"):Labels("Switch", "Stay")
+local third = Flare.Confirm("Switch to your other character?")
 
 thread = coroutine.create(function()
 	ignored = third:Await()
@@ -101,12 +101,6 @@ Shim.step()
 
 check("a dismissed question still returns", ignored ~= nil)
 check("dismissed is neither yes nor no", ignored and ignored.Value ~= true, ignored and tostring(ignored.Value))
-
---// fewer names than buttons ----------------------------------------------------
-local partial = Flare.Confirm("Sure?"):Labels("Yes")
-
-check("one name relabels one button", partial.Spec.Actions[1].Text == "Yes")
-check("the rest are left alone", partial.Spec.Actions[2].Text == "Cancel", partial.Spec.Actions[2].Text)
 
 --// a Confirm never expires on its own --------------------------------------------
 local patient = Flare.Confirm("Still here?"):Show()
@@ -141,6 +135,24 @@ local rows = choice.Refs.List and (choice.Refs.List :: any).rows
 
 check("rows exist as instances", rows ~= nil and #rows >= 2, if rows then `{#rows}` else "none")
 
+--// a description gets its own line ---------------------------------------------
+local list = choice.Refs.List :: any
+
+check("described rows stack", list.stacked == true)
+check("a stacked row is taller than a plain one", list:span() > list.rowHeight, `{list:span()} vs {list.rowHeight}`)
+
+if rows and rows[1] then
+	check(
+		"the text block runs down the row",
+		tostring(rows[1].lines.FillDirection) == "Enum.FillDirection.Vertical",
+		tostring(rows[1].lines.FillDirection)
+	)
+	check("the description sits under the title", rows[1].detail.LayoutOrder > rows[1].title.LayoutOrder)
+	check("both lines are visible", rows[1].detail.Visible == true)
+end
+
+--// resolving tears the panel down, so everything about the rendered row has
+--// to be looked at before the click, not after
 if rows and rows[1] then
 	rows[1].button.Activated:Fire()
 end
@@ -156,6 +168,24 @@ local simple = Flare.Choice("Pick one", { "Switch", "Stay" })
 
 check("a bare string is its own id", simple.Spec.Choices[1].Id == "Switch")
 check("and its own text", simple.Spec.Choices[1].Text == "Switch")
+
+--// the stack has a cap, and a queued notice has no panel yet — clear the
+--// screen first so this one is actually rendered
+for _, notice in Flare.Live() do
+	notice:Resolve({ Kind = "Dismissed" })
+end
+
+Shim.advance(2)
+
+simple:Show()
+Shim.step()
+
+check("the list rendered once the screen was clear", simple.Refs.List ~= nil)
+
+local plain = simple.Refs.List :: any
+
+check("rows without descriptions stay inline", plain.stacked == false)
+check("and stay one row tall", plain:span() == plain.rowHeight)
 
 simple:Resolve({ Kind = "Dismissed" })
 

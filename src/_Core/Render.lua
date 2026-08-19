@@ -285,7 +285,20 @@ function Kinds.Choice(panel: any, flare: any, notice: Notice, refs: { [string]: 
 		})
 	end
 
+	--// a description is a sentence, not a keybind, so it gets its own line
+	--// under the option rather than trailing it and clipping at the edge
+	local described = false
+
+	for _, choice in notice.Spec.Choices do
+		if choice.Description and choice.Description ~= "" then
+			described = true
+
+			break
+		end
+	end
+
 	list:setItems(items :: any)
+	list:setStacked(described)
 	list:setMaxRows(6)
 	list:setSelectable(true)
 	list:onActivated(function(item)

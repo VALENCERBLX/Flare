@@ -1723,31 +1723,6 @@ function Notice.Action(self: Notice, text: string, run: ((Notice) -> boolean?)?,
 	return Notice.Rebuild(self)\
 end\
 \
---- Renames the buttons a kind arrived with, keeping what they do. A `Confirm`\
---- still resolves `Accepted` and `Cancelled` — it just says *Switch* and\
---- *Stay* rather than *Confirm* and *Cancel*.\
----\
---- ```lua\
---- Flare.Confirm(\"Switch to your other character?\"):Labels(\"Switch\", \"Stay\"):Await()\
---- ```\
----\
---- Names are matched to buttons in order. Passing fewer than there are buttons\
---- relabels only that many, and passing more ignores the rest.\
-function Notice.Labels(self: Notice, ...: string): Notice\
-	local count = select(\"#\", ...)\
-\
-	for index = 1, count do\
-		local text = select(index, ...)\
-		local action = self.Spec.Actions[index]\
-\
-		if action and text then\
-			action.Text = text\
-		end\
-	end\
-\
-	return Notice.Rebuild(self)\
-end\
-\
 --- The options for a `Choice`. A bare string is its own id.\
 function Notice.Choices(self: Notice, options: { Types.ChoiceLike }): Notice\
 	local out: { Types.Choice } = {}\
@@ -2485,7 +2460,20 @@ function Kinds.Choice(panel: any, flare: any, notice: Notice, refs: { [string]: 
 		})\
 	end\
 \
+	--// a description is a sentence, not a keybind, so it gets its own line\
+	--// under the option rather than trailing it and clipping at the edge\
+	local described = false\
+\
+	for _, choice in notice.Spec.Choices do\
+		if choice.Description and choice.Description ~= \"\" then\
+			described = true\
+\
+			break\
+		end\
+	end\
+\
 	list:setItems(items :: any)\
+	list:setStacked(described)\
 	list:setMaxRows(6)\
 	list:setSelectable(true)\
 	list:onActivated(function(item)\
@@ -7023,6 +7011,8 @@ List.__index = List\
 export type Row = {\
 	button: TextButton,\
 	icon: ImageLabel,\
+	text: Frame,\
+	lines: UIListLayout,\
 	title: TextLabel,\
 	detail: TextLabel,\
 	index: number,\
@@ -7039,6 +7029,8 @@ export type Fields = Types.NodeFields & Types.ElementFields & {\
 	virtual: boolean,\
 	selectable: boolean,\
 	selectedId: string?,\
+	stacked: boolean,\
+	detailSize: number,\
 \
 	widest: number,\
 	pinned: boolean,\
@@ -7147,6 +7139,8 @@ function List.new(app: Types.App): Types.List\
 		rows = {},\
 \
 		rowHeight = theme.size.row,\
+		stacked = false,\
+		detailSize = theme.text.xs,\
 		font = theme.font.body,\
 		textSize = theme.text.sm,\
 		maxRows = 8,\
@@ -7177,6 +7171,33 @@ function List.new(app: Types.App): Types.List\
 	end))\
 \
 	return list\
+end\
+\
+--- How tall one row is. A stacked row carries its description on a second\
+--- line, so it is taller — and virtualisation needs one honest number for it,\
+--- not a guess per item.\
+function List.span(self: Fields): number\
+	if not self.stacked then\
+		return self.rowHeight\
+	end\
+\
+	return self.rowHeight + self.detailSize + 2\
+end\
+\
+--- Arranges a row's text block for the current mode. A trailing detail is\
+--- right for a keybind sitting next to a command name; a sentence needs its own\
+--- line, or it runs off the edge of anything narrower than a console.\
+function List.layoutRow(self: Fields, row: Row)\
+	local theme = self.app.theme\
+	local stacked = self.stacked\
+\
+	row.lines.FillDirection = if stacked then Enum.FillDirection.Vertical else Enum.FillDirection.Horizontal\
+	row.lines.VerticalAlignment = if stacked then Enum.VerticalAlignment.Top else Enum.VerticalAlignment.Center\
+	row.lines.Padding = UDim.new(0, if stacked then 0 else theme.space.sm)\
+\
+	row.title.Size = UDim2.fromOffset(0, if stacked then self.textSize + 4 else self.rowHeight)\
+	row.detail.Size = UDim2.fromOffset(0, if stacked then self.detailSize + 4 else self.rowHeight)\
+	row.detail.TextSize = self.detailSize\
 end\
 \
 --- Builds one recycled row instance.\
@@ -7219,44 +7240,68 @@ function List.buildRow(self: Fields, index: number): Row\
 				},\
 			},\
 			{\
-				class = \"TextLabel\",\
-				ref = \"title\",\
+				class = \"Frame\",\
+				ref = \"text\",\
 				props = {\
 					BackgroundTransparency = 1,\
-					AutomaticSize = Enum.AutomaticSize.X,\
-					Size = UDim2.fromOffset(0, self.rowHeight),\
-\
-					Font = self.font,\
-					TextSize = self.textSize,\
-					TextColor3 = theme.color.text,\
-					TextXAlignment = Enum.TextXAlignment.Left,\
-					TextYAlignment = Enum.TextYAlignment.Center,\
-					RichText = true,\
+					AutomaticSize = Enum.AutomaticSize.XY,\
+					Size = UDim2.fromOffset(0, 0),\
 \
 					LayoutOrder = 2,\
-					Name = \"Title\",\
-					Text = \"\",\
+					Name = \"Text\",\
 				},\
-			},\
-			{\
-				class = \"TextLabel\",\
-				ref = \"detail\",\
-				props = {\
-					BackgroundTransparency = 1,\
-					AutomaticSize = Enum.AutomaticSize.X,\
-					Size = UDim2.fromOffset(0, self.rowHeight),\
+				children = {\
+					{\
+						class = \"UIListLayout\",\
+						ref = \"lines\",\
+						props = {\
+							SortOrder = Enum.SortOrder.LayoutOrder,\
+							FillDirection = Enum.FillDirection.Horizontal,\
+							VerticalAlignment = Enum.VerticalAlignment.Center,\
+							Padding = UDim.new(0, theme.space.sm),\
+						},\
+					},\
+					{\
+						class = \"TextLabel\",\
+						ref = \"title\",\
+						props = {\
+							BackgroundTransparency = 1,\
+							AutomaticSize = Enum.AutomaticSize.X,\
+							Size = UDim2.fromOffset(0, self.rowHeight),\
 \
-					Font = theme.font.body,\
-					TextSize = theme.text.xs,\
-					TextColor3 = theme.color.textGhost,\
-					TextTransparency = theme.transparency.ghost,\
-					TextXAlignment = Enum.TextXAlignment.Left,\
-					TextYAlignment = Enum.TextYAlignment.Center,\
+							Font = self.font,\
+							TextSize = self.textSize,\
+							TextColor3 = theme.color.text,\
+							TextXAlignment = Enum.TextXAlignment.Left,\
+							TextYAlignment = Enum.TextYAlignment.Center,\
+							RichText = true,\
 \
-					LayoutOrder = 3,\
-					Visible = false,\
-					Name = \"Detail\",\
-					Text = \"\",\
+							LayoutOrder = 1,\
+							Name = \"Title\",\
+							Text = \"\",\
+						},\
+					},\
+					{\
+						class = \"TextLabel\",\
+						ref = \"detail\",\
+						props = {\
+							BackgroundTransparency = 1,\
+							AutomaticSize = Enum.AutomaticSize.X,\
+							Size = UDim2.fromOffset(0, self.rowHeight),\
+\
+							Font = theme.font.body,\
+							TextSize = self.detailSize,\
+							TextColor3 = theme.color.textGhost,\
+							TextTransparency = theme.transparency.ghost,\
+							TextXAlignment = Enum.TextXAlignment.Left,\
+							TextYAlignment = Enum.TextYAlignment.Center,\
+\
+							LayoutOrder = 2,\
+							Visible = false,\
+							Name = \"Detail\",\
+							Text = \"\",\
+						},\
+					},\
 				},\
 			},\
 		},\
@@ -7265,10 +7310,14 @@ function List.buildRow(self: Fields, index: number): Row\
 	local row: Row = {\
 		button = button :: TextButton,\
 		icon = refs.icon :: ImageLabel,\
+		text = refs.text :: Frame,\
+		lines = refs.lines :: UIListLayout,\
 		title = refs.title :: TextLabel,\
 		detail = refs.detail :: TextLabel,\
 		index = 0,\
 	}\
+\
+	List.layoutRow(self, row)\
 \
 	button.Parent = self.refs.canvas\
 \
@@ -7315,7 +7364,7 @@ function List.render(self: Fields)\
 	local canvas = self.refs.canvas :: Frame\
 \
 	local count = #self.items\
-	local height = Virtual.canvas(count, self.rowHeight)\
+	local height = Virtual.canvas(count, List.span(self))\
 \
 	scroller.CanvasSize = UDim2.fromOffset(0, height)\
 	canvas.Size = UDim2.new(1, 0, 0, math.max(height, 1))\
@@ -7328,8 +7377,8 @@ function List.render(self: Fields)\
 	if self.virtual then\
 		first, last = Virtual.range(\
 			scroller.CanvasPosition.Y,\
-			math.max(scroller.AbsoluteSize.Y, self.rowHeight),\
-			self.rowHeight,\
+			math.max(scroller.AbsoluteSize.Y, List.span(self)),\
+			List.span(self),\
 			count\
 		)\
 	end\
@@ -7354,8 +7403,8 @@ function List.render(self: Fields)\
 \
 		row.index = index\
 		row.button.Visible = true\
-		row.button.Position = UDim2.fromOffset(0, Virtual.offset(index, self.rowHeight))\
-		row.button.Size = UDim2.new(1, 0, 0, self.rowHeight)\
+		row.button.Position = UDim2.fromOffset(0, Virtual.offset(index, List.span(self)))\
+		row.button.Size = UDim2.new(1, 0, 0, List.span(self))\
 		row.button.BackgroundTransparency = if selected and self.selectable then 0.82 else 1\
 \
 		row.title.Text = if self.renderer then self.renderer(item, index) else Text.escape(item.text or \"\")\
@@ -7440,6 +7489,34 @@ function List.setTextSize(self: Fields & Types.List, size: number): Types.List\
 	return self:invalidate()\
 end\
 \
+--- Puts each row's description on its own line, under the text, rather than\
+--- trailing it on the same one.\
+---\
+--- The trailing form is right for a keybind beside a command name — short,\
+--- and the eye reads it as an annotation. A sentence needs the second line: on\
+--- anything narrower than a console it collides with the text it describes and\
+--- clips at the edge.\
+function List.setStacked(self: Fields & Types.List, stacked: boolean?): Types.List\
+	local next = stacked ~= false\
+\
+	if next == self.stacked then\
+		return self\
+	end\
+\
+	self.stacked = next\
+	--// row width is measured differently in each mode, so the cached answer\
+	--// from the other one is wrong\
+	self.widest = 0\
+\
+	for _, row in self.rows do\
+		List.layoutRow(self, row)\
+	end\
+\
+	List.render(self)\
+\
+	return self:invalidate()\
+end\
+\
 --- Turn virtualisation off for short lists where every row should exist.\
 function List.setVirtual(self: Fields & Types.List, virtual: boolean): Types.List\
 	self.virtual = virtual ~= false\
@@ -7516,7 +7593,7 @@ function List.scrollTo(self: Fields & Types.List, index: number): Types.List\
 \
 	scroller.CanvasPosition = Vector2.new(\
 		0,\
-		Virtual.scrollTo(index, self.rowHeight, scroller.AbsoluteSize.Y, scroller.CanvasPosition.Y)\
+		Virtual.scrollTo(index, List.span(self), scroller.AbsoluteSize.Y, scroller.CanvasPosition.Y)\
 	)\
 \
 	return self\
@@ -7549,7 +7626,7 @@ function List.measure(self: Fields & Types.List, available: Vector2): Vector2\
 	end\
 \
 	local rows = math.min(math.max(count, 1), self.maxRows)\
-	local height = rows * self.rowHeight\
+	local height = rows * List.span(self)\
 \
 	--// the widest row is what a panel should grow to, so it is measured even\
 	--// when filling. The budget bounds the cost: a hundred thousand rows do\
@@ -7564,7 +7641,11 @@ function List.measure(self: Fields & Types.List, available: Vector2): Vector2\
 			local line = self.app.measure:width(content, self.textSize, self.font)\
 \
 			if item.description then\
-				line += self.app.measure:width(item.description, theme.text.xs, theme.font.body) + theme.space.sm\
+				local detail = self.app.measure:width(item.description, self.detailSize, theme.font.body)\
+\
+				--// side by side they add up; stacked, the row only has to be as\
+				--// wide as whichever line is longer\
+				line = if self.stacked then math.max(line, detail) else line + detail + theme.space.sm\
 			end\
 \
 			if item.icon and item.icon ~= \"\" then\
@@ -15500,6 +15581,7 @@ export type List = NodeFields & ElementFields & NodeApi<List> & ElementApi<List>
 	setVirtual: (self: List, virtual: boolean) -> List,\
 	setMaxRows: (self: List, rows: number) -> List,\
 	setSelectable: (self: List, selectable: boolean) -> List,\
+	setStacked: (self: List, stacked: boolean?) -> List,\
 	setSelected: (self: List, id: Bindable<string?>) -> List,\
 	setEmptyText: (self: List, text: Bindable<string>) -> List,\
 	setRenderer: (self: List, renderer: (ListItem, number) -> string) -> List,\

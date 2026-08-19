@@ -575,6 +575,7 @@ export type List = NodeFields & ElementFields & NodeApi<List> & ElementApi<List>
 	setVirtual: (self: List, virtual: boolean) -> List,
 	setMaxRows: (self: List, rows: number) -> List,
 	setSelectable: (self: List, selectable: boolean) -> List,
+	setStacked: (self: List, stacked: boolean?) -> List,
 	setSelected: (self: List, id: Bindable<string?>) -> List,
 	setEmptyText: (self: List, text: Bindable<string>) -> List,
 	setRenderer: (self: List, renderer: (ListItem, number) -> string) -> List,

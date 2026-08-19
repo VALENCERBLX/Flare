@@ -67,41 +67,8 @@ Each resolves with a `Result`:
 | `choice` | `Value` / `Dismissed` | the chosen `Id` |
 
 A choice entry can be a plain string — its text becomes its id — or a table
-with `Id`, `Text`, `Icon` and `Description`.
-
-Two ways to ask a question with your own words on it. A `Choice` is the usual
-one — each option is a row with its own text, and the answer is the id you gave
-it:
-
-```lua
-local answer = Flare.Choice("Would you like to switch your character?", {
-    { Id = "switch", Text = "Switch", Description = "Swap to your other character" },
-    { Id = "stay", Text = "Stay", Description = "Keep the one you have" },
-}):Title("Switch character?"):Await()
-
-if answer.Value == "switch" then
-    switch()
-end
-```
-
-A `Confirm` is the shorter one, and arrives with **Confirm** and **Cancel**
-welded on. `:Labels()` renames them without changing what they do, so the words
-can suit the question while the result stays `Accepted` or `Cancelled`:
-
-```lua
-local answer = Flare.Confirm("Switch to your other character?")
-    :Title("Switch character?")
-    :Labels("Switch", "Stay")
-    :Await()
-
-if answer.Kind == "Accepted" then
-    switch()
-end
-```
-
-Names map to buttons in order, and passing fewer than there are leaves the rest
-alone. Read the `Kind`, not the `Value`: a question that was dismissed rather
-than answered comes back `Dismissed`, and its `Value` is nil, not `false`.
+with `Id`, `Text`, `Icon` and `Description`. A description sits on its own line
+under the option rather than trailing it, so a sentence has room.
 
 ## Live
 
