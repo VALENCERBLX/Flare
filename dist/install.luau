@@ -2697,6 +2697,18 @@ local function withCount(text: string, count: number, theme: any): string\
 	return `{text}  <font color=\"{theme.Rich.ghost}\">×{count}</font>`\
 end\
 \
+--- Kinds that put a control on the notice. Anything here, or anything given a\
+--- widget through `Custom`, stops the notice being one big dismiss button.\
+local CONTROLS: { [string]: boolean } = {\
+	Prompt = true,\
+	Choice = true,\
+	Color = true,\
+	Number = true,\
+	Rating = true,\
+	Dropdown = true,\
+	Radio = true,\
+}\
+\
 local function panelFor(flare: any, notice: Notice): any\
 	local theme = flare.Theme\
 	local spec = notice.Spec\
@@ -2727,8 +2739,16 @@ local function panelFor(flare: any, notice: Notice): any\
 		panel:setDraggable(false)\
 	end\
 \
-	--// nothing else on it is clickable, so the whole notice can be the button\
-	local interactive = #spec.Actions > 0 or #spec.Choices > 0 or spec.Kind == \"Prompt\"\
+	--// A notice whose whole surface is a dismiss button cannot also hold a\
+	--// control. A slider or a colour square handles raw input rather than\
+	--// consuming a click the way a Button does, so the drag that moved it\
+	--// reached the panel underneath and dismissed the notice out from under\
+	--// the pointer.\
+	local interactive = #spec.Actions > 0\
+		or #spec.Choices > 0\
+		or #spec.Options > 0\
+		or #spec.Builders > 0\
+		or CONTROLS[spec.Kind] == true\
 \
 	if spec.Dismissible and not interactive then\
 		panel:setActivatable(true)\
@@ -3564,13 +3584,20 @@ export type Options = {\
 \
 --// locals\
 --// named layers, lowest first. Anything not listed lands on the default layer.\
+--- Layer order. A popover sits above the modal and the toast layers on\
+--- purpose: a dropdown opened *from* a modal, or from inside a notice, has to\
+--- be readable, and it was not — at 100 it rendered behind both, so a select in\
+--- a toast opened into nothing.\
+---\
+--- Only a tooltip goes higher, because a tooltip can be attached to something\
+--- in a popover.\
 local LAYERS: { [string]: number } = {\
 	background = -10,\
 	default = 1,\
 	raised = 10,\
-	popover = 100,\
 	modal = 500,\
 	toast = 800,\
+	popover = 900,\
 	tooltip = 1000,\
 }\
 \
@@ -14422,6 +14449,11 @@ export type Fields = Types.NodeFields & Types.ElementFields & {\
 	minimum: number?,\
 	maximum: number?,\
 	area: boolean,\
+	--// the size the element was last committed to. AbsoluteSize is zero on the\
+	--// frame a thing is built and Roblox has not laid it out yet, so a line\
+	--// drawn from it came out as a row of one-pixel stubs and stayed that way,\
+	--// because nothing rebuilt it afterwards.\
+	plot: Vector2,\
 }\
 \
 --- Creates a sparkline. Prefer `panel:sparkline(points)`.\
@@ -14470,6 +14502,7 @@ function Sparkline.new(app: Types.App): Types.Sparkline\
 		minimum = nil,\
 		maximum = nil,\
 		area = false,\
+		plot = Vector2.new(0, height),\
 	}\
 \
 	return setmetatable(fields, Sparkline) :: any\
@@ -14521,14 +14554,11 @@ function Sparkline.rebuild(self: Fields & Types.Sparkline)\
 		local x1, y1 = at(index)\
 		local x2, y2 = at(index + 1)\
 \
-		--// pixel geometry is not known until the element is laid out, so the\
-		--// segment is positioned in scale and rotated by the angle between the\
-		--// two points in the element's own aspect\
-		local width = self.instance.AbsoluteSize.X\
-		local height = self.instance.AbsoluteSize.Y\
-\
-		local dx = (x2 - x1) * math.max(width, 1)\
-		local dy = (y2 - y1) * math.max(height, 1)\
+		--// the aspect the angle is measured in comes from the size the layout\
+		--// pass settled on, not from AbsoluteSize, which is still zero on the\
+		--// frame the element is built\
+		local dx = (x2 - x1) * math.max(self.plot.X, 1)\
+		local dy = (y2 - y1) * math.max(self.plot.Y, 1)\
 		local length = math.sqrt(dx * dx + dy * dy)\
 \
 		local segment = Create.node(self.scope, {\
@@ -14610,12 +14640,17 @@ end\
 \
 function Sparkline.commit(self: Fields & Types.Sparkline, inner: Vector2, vertical: boolean, share: number)\
 	local width = if vertical and self.fill then math.max(0, inner.X - self.margin * 2) else self.desired.X\
+	local settled = Vector2.new(math.floor(width + 0.5), self.height)\
 \
-	self.instance.Size = UDim2.fromOffset(math.floor(width + 0.5), self.height)\
+	self.instance.Size = UDim2.fromOffset(settled.X, settled.Y)\
 \
-	--// the segments are sized in pixels, so they are rebuilt once the element\
-	--// knows how wide it actually is\
-	Sparkline.rebuild(self)\
+	--// the segments are sized in pixels, so they are rebuilt whenever the\
+	--// element's own size changes — this is the only place that size is known\
+	if settled ~= self.plot then\
+		self.plot = settled\
+\
+		Sparkline.rebuild(self)\
+	end\
 end\
 \
 Element.install(Sparkline)\

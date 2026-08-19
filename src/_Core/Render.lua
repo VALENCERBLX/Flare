@@ -45,6 +45,18 @@ local function withCount(text: string, count: number, theme: any): string
 	return `{text}  <font color="{theme.Rich.ghost}">×{count}</font>`
 end
 
+--- Kinds that put a control on the notice. Anything here, or anything given a
+--- widget through `Custom`, stops the notice being one big dismiss button.
+local CONTROLS: { [string]: boolean } = {
+	Prompt = true,
+	Choice = true,
+	Color = true,
+	Number = true,
+	Rating = true,
+	Dropdown = true,
+	Radio = true,
+}
+
 local function panelFor(flare: any, notice: Notice): any
 	local theme = flare.Theme
 	local spec = notice.Spec
@@ -75,8 +87,16 @@ local function panelFor(flare: any, notice: Notice): any
 		panel:setDraggable(false)
 	end
 
-	--// nothing else on it is clickable, so the whole notice can be the button
-	local interactive = #spec.Actions > 0 or #spec.Choices > 0 or spec.Kind == "Prompt"
+	--// A notice whose whole surface is a dismiss button cannot also hold a
+	--// control. A slider or a colour square handles raw input rather than
+	--// consuming a click the way a Button does, so the drag that moved it
+	--// reached the panel underneath and dismissed the notice out from under
+	--// the pointer.
+	local interactive = #spec.Actions > 0
+		or #spec.Choices > 0
+		or #spec.Options > 0
+		or #spec.Builders > 0
+		or CONTROLS[spec.Kind] == true
 
 	if spec.Dismissible and not interactive then
 		panel:setActivatable(true)

@@ -195,6 +195,58 @@ do
 	notice:Resolve({ Kind = "Dismissed" })
 end
 
+--// a notice with a widget is not one big dismiss button ---------------------------
+do
+	--// a slider handles raw input rather than consuming a click the way a
+	--// Button does, so the drag that moved it reached the panel underneath and
+	--// dismissed the notice out from under the pointer
+	local notice = Flare.Toast("Server load"):Chart({ 1, 2, 3 }):Sticky():Show()
+
+	Shim.step()
+
+	check("a notice carrying a widget is not click-to-dismiss", notice.Panel.hitbox == nil)
+
+	check("so there is nothing to click through to", notice:Alive())
+
+	notice:Resolve({ Kind = "Dismissed" })
+
+	--// a plain toast still is
+	local plain = Flare.Toast("Just words"):Sticky():Show()
+
+	Shim.step()
+
+	check("a plain notice still has one", plain.Panel.hitbox ~= nil and plain.Panel.hitbox.Visible)
+
+	plain.Panel.hitbox.Activated:Fire()
+	Shim.step()
+
+	check("and clicking it dismisses", not plain:Alive())
+end
+
+--// a dropdown must open above the notice it is in ---------------------------------
+do
+	local notice = Flare.Dropdown("Spawn where?", { "Base", "Arena" }):Show()
+
+	Shim.step()
+
+	notice.Refs.Select:toggle()
+	Shim.step()
+
+	local popover = notice.Refs.Select.popover
+
+	check("the dropdown opened", popover ~= nil and popover.opened == true)
+
+	--// a select opening inside a notice put its list on the popover layer at
+	--// ZIndex 100, under the toast layer at 800 — so it opened into nothing
+	local popoverLayer = popover.instance.Parent
+	local noticeLayer = notice.Panel.instance.Parent
+
+	check("its layer sits above the notice's", popoverLayer.ZIndex > noticeLayer.ZIndex,
+		`{popoverLayer.ZIndex} vs {noticeLayer.ZIndex}`)
+
+	notice:Resolve({ Kind = "Dismissed" })
+end
+
 --// dropdown ------------------------------------------------------------------------
 do
 	local answer
