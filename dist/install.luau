@@ -2757,6 +2757,7 @@ export type Preset = Types.Preset\
 export type Option = Types.Option\
 export type ListItem = Types.ListItem\
 export type MenuItem = Types.MenuItem\
+export type MenuGroup = Types.MenuGroup\
 export type Tab = Types.Tab\
 \
 export type Label = Types.Label\
@@ -2775,6 +2776,7 @@ export type Tabs = Types.Tabs\
 export type Chips = Types.Chips\
 export type Suggest = Types.Suggest\
 export type Menu = Types.Menu\
+export type MenuBar = Types.MenuBar\
 export type Badge = Types.Badge\
 export type Scroll = Types.Scroll\
 export type Keybind = Types.Keybind\
