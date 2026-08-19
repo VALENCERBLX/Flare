@@ -212,6 +212,18 @@ end
 
 beat(3)
 
+section("number")
+
+--- A stepper rather than a field: a quantity has a floor, a ceiling and a step,
+--- and none of those survive being typed.
+local many = Flare.Number("How many?", 1):Range(1, 99):Title("Buy potions"):Await()
+
+if many.Kind == "Value" then
+	Flare.Toast(`Bought {many.Value}`):Ok():Show()
+end
+
+beat(3)
+
 --// 6. live notices -----------------------------------------------------------------------
 --- The builder and the handle are the same object, so every setter still works
 --- after `:Show()`. This is why a builder that goes inert would be wrong.

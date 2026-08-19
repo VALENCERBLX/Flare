@@ -284,6 +284,7 @@ local EVENTS = {
 	"Activated",
 	"MouseButton1Click",
 	"MouseButton1Down",
+	"MouseButton1Up",
 	"MouseEnter",
 	"MouseLeave",
 	"MouseMoved",

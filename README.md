@@ -29,10 +29,10 @@ job:Finish("Uploaded")
 No setup call, no provider to mount. The first `:Show()` builds the UI; a game
 that never notifies pays nothing for having Flare installed.
 
-## Fourteen kinds
+## Fifteen kinds
 
 **Core** — `toast` `banner` `alert` `snackbar`
-**Interactive** — `confirm` `prompt` `choice` `color`
+**Interactive** — `confirm` `prompt` `choice` `color` `number`
 **Live** — `progress` `loading` `countdown`
 **Rich** — `achievement` `reward` `hint`
 

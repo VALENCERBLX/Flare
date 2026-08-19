@@ -100,6 +100,10 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice
 			Placeholder = nil,
 			Default = nil,
 			Color = nil,
+			Number = nil,
+			Minimum = nil,
+			Maximum = nil,
+			Step = nil,
 			Attach = nil,
 			Side = nil,
 
@@ -376,6 +380,47 @@ function Notice.Color(self: Notice, color: Color3): Notice
 
 	if self.Panel and self.Refs.Picker then
 		self.Refs.Picker:setSilent(color)
+
+		return self
+	end
+
+	return Notice.Refresh(self)
+end
+
+--- What a `Number` notice opens on. Like `Color`, this reaches a live stepper
+--- directly rather than rebuilding the panel around it.
+function Notice.Number(self: Notice, value: number): Notice
+	self.Spec.Number = value
+
+	if self.Panel and self.Refs.Stepper then
+		self.Refs.Stepper:setValue(value)
+
+		return self
+	end
+
+	return Notice.Refresh(self)
+end
+
+--- The range a `Number` notice may move in.
+function Notice.Range(self: Notice, minimum: number, maximum: number): Notice
+	self.Spec.Minimum = minimum
+	self.Spec.Maximum = maximum
+
+	if self.Panel and self.Refs.Stepper then
+		self.Refs.Stepper:setRange(minimum, maximum)
+
+		return self
+	end
+
+	return Notice.Refresh(self)
+end
+
+--- How far one press of the plus moves it.
+function Notice.Step(self: Notice, step: number): Notice
+	self.Spec.Step = step
+
+	if self.Panel and self.Refs.Stepper then
+		self.Refs.Stepper:setStep(step)
 
 		return self
 	end

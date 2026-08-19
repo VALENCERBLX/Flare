@@ -511,6 +511,7 @@ function Flare.Transient(kind: string): boolean
 		and kind ~= "Prompt"
 		and kind ~= "Choice"
 		and kind ~= "Color"
+		and kind ~= "Number"
 		and kind ~= "Alert"
 end
 
@@ -767,6 +768,40 @@ function Flare.Color(body: string?, initial: Color3?): Notice
 
 	notice:Action("Pick", function(handle)
 		handle:Resolve({ Kind = "Value", Value = handle.Spec.Color })
+
+		return false
+	end)
+
+	notice:Action("Cancel", function(handle)
+		handle:Resolve({ Kind = "Cancelled" })
+
+		return false
+	end)
+
+	return notice
+end
+
+--- Asks for a number. Resolves with it.
+---
+--- ```lua
+--- local answer = Flare.Number("How many?", 1):Range(1, 99):Await()
+---
+--- if answer.Kind == "Value" then
+---     buy(answer.Value)
+--- end
+--- ```
+---
+--- A stepper rather than a text field, because a quantity has a floor, a
+--- ceiling and a step, and none of those survive being typed.
+function Flare.Number(body: string?, initial: number?): Notice
+	local notice = make("Number", body)
+
+	if initial then
+		notice:Number(initial)
+	end
+
+	notice:Action("Confirm", function(handle)
+		handle:Resolve({ Kind = "Value", Value = handle.Spec.Number })
 
 		return false
 	end)

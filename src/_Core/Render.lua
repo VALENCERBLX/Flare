@@ -350,6 +350,35 @@ function Kinds.Color(panel: any, flare: any, notice: Notice, refs: { [string]: a
 	refs.Picker = picker
 end
 
+--- A stepper in a notice, for asking how many.
+function Kinds.Number(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	Kinds.Simple(panel, flare, notice, refs)
+
+	local spec = notice.Spec
+	local stepper = panel:stepper()
+
+	stepper:setFill(true)
+	stepper:setRange(spec.Minimum or 0, spec.Maximum or 99)
+
+	if spec.Step then
+		stepper:setStep(spec.Step)
+	end
+
+	if spec.Number then
+		stepper:setValue(spec.Number)
+	end
+
+	--// the spec carries the live number, so a caller watching the handle sees
+	--// it move rather than only the answer
+	stepper:onChanged(function(value)
+		spec.Number = value
+	end)
+
+	spec.Number = stepper:value()
+
+	refs.Stepper = stepper
+end
+
 --- Big, centred, and celebratory. The one kind that is allowed to interrupt.
 function Kinds.Achievement(panel: any, flare: any, notice: Notice, refs: { [string]: any })
 	local theme = flare.Theme
@@ -423,6 +452,7 @@ local BUILDERS: { [string]: (any, any, any, any) -> () } = {
 	Choice = Kinds.Choice,
 	Prompt = Kinds.Prompt,
 	Color = Kinds.Color,
+	Number = Kinds.Number,
 	Achievement = Kinds.Achievement,
 	Reward = Kinds.Achievement,
 }

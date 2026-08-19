@@ -58,6 +58,8 @@ local pick = Flare.Choice("Where to?", {
 }):Await()
 
 local colour = Flare.Color("Trail colour", Color3.fromRGB(126, 170, 255)):Await()
+
+local many = Flare.Number("How many?", 1):Range(1, 99):Await()
 ```
 
 Each resolves with a `Result`:
@@ -68,10 +70,16 @@ Each resolves with a `Result`:
 | `prompt` | `Value` / `Cancelled` | the text typed |
 | `choice` | `Value` / `Dismissed` | the chosen `Id` |
 | `color` | `Value` / `Cancelled` | the `Color3` |
+| `number` | `Value` / `Cancelled` | the number |
 
 A choice entry can be a plain string — its text becomes its id — or a table
 with `Id`, `Text`, `Icon` and `Description`. A description sits on its own line
 under the option rather than trailing it, so a sentence has room.
+
+`Number` puts a stepper in a notice — minus, the number, plus — rather than a
+text field, because a quantity has a floor, a ceiling and a step, and none of
+those survive being typed. `:Range(min, max)` and `:Step(n)` set them, and like
+`Color` it writes every change back to `notice.Spec.Number`.
 
 `Color` puts Lume's picker in a notice — a saturation square, a hue rail and a
 hex field — and resolves with the `Color3` itself rather than a hex string,

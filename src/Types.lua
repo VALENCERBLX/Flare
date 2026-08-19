@@ -27,6 +27,7 @@ export type Kind =
 	| "Loading"
 	| "Countdown"
 	| "Color"
+	| "Number"
 	| "Achievement"
 	| "Reward"
 	| "Hint"
@@ -121,6 +122,11 @@ export type Spec = {
 	Default: string?,
 	--- The colour a `Color` notice opens on.
 	Color: Color3?,
+	--- What a `Number` notice opens on, and the range it may move in.
+	Number: number?,
+	Minimum: number?,
+	Maximum: number?,
+	Step: number?,
 	Attach: GuiObject?,
 	Side: Side?,
 
