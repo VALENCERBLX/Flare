@@ -314,7 +314,16 @@ Flare.Snackbar(<span class="st">"Message deleted"</span>, <span class="st">"Undo
 <p>Each resolves with a <code>Result</code>:</p>
 <p>| Kind | <code>Result.Kind</code> | <code>Result.Value</code> | | --- | --- | --- | | <code>confirm</code> | <code>Accepted</code> / <code>Cancelled</code> | <code>true</code> / <code>false</code> | | <code>prompt</code> | <code>Value</code> / <code>Cancelled</code> | the text typed | | <code>choice</code> | <code>Value</code> / <code>Dismissed</code> | the chosen <code>Id</code> |</p>
 <p>A choice entry can be a plain string — its text becomes its id — or a table with <code>Id</code>, <code>Text</code>, <code>Icon</code> and <code>Description</code>.</p>
-<p>A <code>Confirm</code> arrives with <strong>Confirm</strong> and <strong>Cancel</strong> on its buttons. <code>:Labels()</code> renames them without changing what they do, so the words can suit the question while the result stays <code>Accepted</code> or <code>Cancelled</code>:</p>
+<p>Two ways to ask a question with your own words on it. A <code>Choice</code> is the usual one — each option is a row with its own text, and the answer is the id you gave it:</p>
+<div class="code"><div class="cap">example</div><pre><code><span class="kw">local</span> answer = Flare.Choice(<span class="st">"Would you like to switch your character?"</span>, {
+    { Id = <span class="st">"switch"</span>, Text = <span class="st">"Switch"</span>, Description = <span class="st">"Swap to your other character"</span> },
+    { Id = <span class="st">"stay"</span>, Text = <span class="st">"Stay"</span>, Description = <span class="st">"Keep the one you have"</span> },
+}):Title(<span class="st">"Switch character?"</span>):Await()
+
+<span class="kw">if</span> answer.Value == <span class="st">"switch"</span> <span class="kw">then</span>
+    switch()
+<span class="kw">end</span></code></pre></div>
+<p>A <code>Confirm</code> is the shorter one, and arrives with <strong>Confirm</strong> and <strong>Cancel</strong> welded on. <code>:Labels()</code> renames them without changing what they do, so the words can suit the question while the result stays <code>Accepted</code> or <code>Cancelled</code>:</p>
 <div class="code"><div class="cap">example</div><pre><code><span class="kw">local</span> answer = Flare.Confirm(<span class="st">"Switch to your other character?"</span>)
     :Title(<span class="st">"Switch character?"</span>)
     :Labels(<span class="st">"Switch"</span>, <span class="st">"Stay"</span>)
