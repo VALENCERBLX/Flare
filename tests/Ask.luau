@@ -1,8 +1,9 @@
 --!nocheck
 
---- Asking a question and getting an answer back. `:Await()` blocks the calling
---- thread, which is the whole point of it and also the part most likely to
---- quietly never return.
+--- Asking a question and getting an answer back, both ways round: a `Confirm`
+--- with two buttons, and a `Choice` with two rows. `:Await()` blocks the
+--- calling thread, which is the whole point of it and also the part most
+--- likely to quietly never return.
 
 local process = require("@lune/process")
 
@@ -114,7 +115,51 @@ Shim.advance(60)
 
 check("a question waits as long as it takes", patient.Alive and patient:Alive())
 
-print(`Confirm: {passed} passed, {failed} failed`)
+--// a Choice asks the same question with rows instead of buttons ---------------
+local picked
+local choice = Flare.Choice("Would you like to switch your character?", {
+	{ Id = "switch", Text = "Switch", Description = "Swap to your other character" },
+	{ Id = "stay", Text = "Stay", Description = "Keep the one you have" },
+}):Title("Switch character?"):Accent()
+
+thread = coroutine.create(function()
+	picked = choice:Await()
+end)
+
+coroutine.resume(thread)
+Shim.step()
+
+check("two rows", #choice.Spec.Choices == 2, `{#choice.Spec.Choices}`)
+check("a string id survives the table form", choice.Spec.Choices[1].Id == "switch")
+check("a Choice has no buttons of its own", #choice.Spec.Actions == 0, `{#choice.Spec.Actions}`)
+check("the list rendered", choice.Refs.List ~= nil)
+
+--// click the first row the way a player would, through the button Lume built
+--// rather than by calling Resolve — the wiring between them is the part worth
+--// testing, and it has been wrong before
+local rows = choice.Refs.List and (choice.Refs.List :: any).rows
+
+check("rows exist as instances", rows ~= nil and #rows >= 2, if rows then `{#rows}` else "none")
+
+if rows and rows[1] then
+	rows[1].button.Activated:Fire()
+end
+
+Shim.step()
+
+check("clicking a row answers", picked ~= nil)
+check("a Choice resolves Value", picked and picked.Kind == "Value", picked and picked.Kind)
+check("the value is the row id", picked and picked.Value == "switch", picked and tostring(picked.Value))
+
+--// bare strings are their own ids ----------------------------------------------
+local simple = Flare.Choice("Pick one", { "Switch", "Stay" })
+
+check("a bare string is its own id", simple.Spec.Choices[1].Id == "Switch")
+check("and its own text", simple.Spec.Choices[1].Text == "Switch")
+
+simple:Resolve({ Kind = "Dismissed" })
+
+print(`Ask: {passed} passed, {failed} failed`)
 
 if failed > 0 then
 	process.exit(1)

@@ -69,9 +69,24 @@ Each resolves with a `Result`:
 A choice entry can be a plain string — its text becomes its id — or a table
 with `Id`, `Text`, `Icon` and `Description`.
 
-A `Confirm` arrives with **Confirm** and **Cancel** on its buttons. `:Labels()`
-renames them without changing what they do, so the words can suit the question
-while the result stays `Accepted` or `Cancelled`:
+Two ways to ask a question with your own words on it. A `Choice` is the usual
+one — each option is a row with its own text, and the answer is the id you gave
+it:
+
+```lua
+local answer = Flare.Choice("Would you like to switch your character?", {
+    { Id = "switch", Text = "Switch", Description = "Swap to your other character" },
+    { Id = "stay", Text = "Stay", Description = "Keep the one you have" },
+}):Title("Switch character?"):Await()
+
+if answer.Value == "switch" then
+    switch()
+end
+```
+
+A `Confirm` is the shorter one, and arrives with **Confirm** and **Cancel**
+welded on. `:Labels()` renames them without changing what they do, so the words
+can suit the question while the result stays `Accepted` or `Cancelled`:
 
 ```lua
 local answer = Flare.Confirm("Switch to your other character?")
