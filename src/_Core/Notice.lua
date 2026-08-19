@@ -306,6 +306,31 @@ function Notice.Action(self: Notice, text: string, run: ((Notice) -> boolean?)?,
 	return Notice.Rebuild(self)
 end
 
+--- Renames the buttons a kind arrived with, keeping what they do. A `Confirm`
+--- still resolves `Accepted` and `Cancelled` — it just says *Switch* and
+--- *Stay* rather than *Confirm* and *Cancel*.
+---
+--- ```lua
+--- Flare.Confirm("Switch to your other character?"):Labels("Switch", "Stay"):Await()
+--- ```
+---
+--- Names are matched to buttons in order. Passing fewer than there are buttons
+--- relabels only that many, and passing more ignores the rest.
+function Notice.Labels(self: Notice, ...: string): Notice
+	local count = select("#", ...)
+
+	for index = 1, count do
+		local text = select(index, ...)
+		local action = self.Spec.Actions[index]
+
+		if action and text then
+			action.Text = text
+		end
+	end
+
+	return Notice.Rebuild(self)
+end
+
 --- The options for a `Choice`. A bare string is its own id.
 function Notice.Choices(self: Notice, options: { Types.ChoiceLike }): Notice
 	local out: { Types.Choice } = {}

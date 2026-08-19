@@ -69,6 +69,25 @@ Each resolves with a `Result`:
 A choice entry can be a plain string — its text becomes its id — or a table
 with `Id`, `Text`, `Icon` and `Description`.
 
+A `Confirm` arrives with **Confirm** and **Cancel** on its buttons. `:Labels()`
+renames them without changing what they do, so the words can suit the question
+while the result stays `Accepted` or `Cancelled`:
+
+```lua
+local answer = Flare.Confirm("Switch to your other character?")
+    :Title("Switch character?")
+    :Labels("Switch", "Stay")
+    :Await()
+
+if answer.Kind == "Accepted" then
+    switch()
+end
+```
+
+Names map to buttons in order, and passing fewer than there are leaves the rest
+alone. Read the `Kind`, not the `Value`: a question that was dismissed rather
+than answered comes back `Dismissed`, and its `Value` is nil, not `false`.
+
 ## Live
 
 They stay while something happens, then resolve.

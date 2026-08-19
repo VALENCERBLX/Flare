@@ -69,6 +69,11 @@ function Signal:Wait()
 	return coroutine.yield()
 end
 
+--// Roblox runs every handler on a thread of its own, which is why a
+--// connection can call something blocking — `:Await()`, `task.wait` — without
+--// stopping whatever fired the event. Calling handlers inline instead meant a
+--// blocking handler yielded the *firer*, and on the main thread that ends the
+--// script mid-run with nothing printed and a clean exit code.
 function Signal:Fire(...)
 	for _, connection in table.clone(self.handlers) do
 		if connection.live then
@@ -76,7 +81,12 @@ function Signal:Fire(...)
 				connection:Disconnect()
 			end
 
-			connection.handler(...)
+			local thread = coroutine.create(connection.handler)
+			local ok, err = coroutine.resume(thread, ...)
+
+			if not ok then
+				error(err, 0)
+			end
 		end
 	end
 end
