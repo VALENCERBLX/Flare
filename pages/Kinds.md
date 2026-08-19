@@ -56,6 +56,8 @@ local pick = Flare.Choice("Where to?", {
     "Spawn",
     { Id = "arena", Text = "Arena", Description = "PvP enabled" },
 }):Await()
+
+local colour = Flare.Color("Trail colour", Color3.fromRGB(126, 170, 255)):Await()
 ```
 
 Each resolves with a `Result`:
@@ -65,10 +67,29 @@ Each resolves with a `Result`:
 | `confirm` | `Accepted` / `Cancelled` | `true` / `false` |
 | `prompt` | `Value` / `Cancelled` | the text typed |
 | `choice` | `Value` / `Dismissed` | the chosen `Id` |
+| `color` | `Value` / `Cancelled` | the `Color3` |
 
 A choice entry can be a plain string — its text becomes its id — or a table
 with `Id`, `Text`, `Icon` and `Description`. A description sits on its own line
 under the option rather than trailing it, so a sentence has room.
+
+`Color` puts Lume's picker in a notice — a saturation square, a hue rail and a
+hex field — and resolves with the `Color3` itself rather than a hex string,
+because that is what you are going to assign. Every drag writes back to
+`notice.Spec.Color`, so a live preview can follow the pointer instead of waiting
+for the answer:
+
+```lua
+local notice = Flare.Color("Trail colour", trail.Color.Keypoints[1].Value):Show()
+
+task.spawn(function()
+    while notice:Alive() do
+        trail.Color = ColorSequence.new(notice.Spec.Color)
+
+        task.wait()
+    end
+end)
+```
 
 ## Live
 

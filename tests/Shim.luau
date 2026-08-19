@@ -140,6 +140,29 @@ local Color3Lib = {
 	fromRGB = function(r, g, b)
 		return color3((r or 0) / 255, (g or 0) / 255, (b or 0) / 255)
 	end,
+	fromHSV = function(h, s, v)
+		local sector = (h % 1) * 6
+		local index = math.floor(sector)
+		local offset = sector - index
+
+		local p = v * (1 - s)
+		local q = v * (1 - s * offset)
+		local t = v * (1 - s * (1 - offset))
+
+		if index == 0 then
+			return color3(v, t, p)
+		elseif index == 1 then
+			return color3(q, v, p)
+		elseif index == 2 then
+			return color3(p, v, t)
+		elseif index == 3 then
+			return color3(p, q, v)
+		elseif index == 4 then
+			return color3(t, p, v)
+		end
+
+		return color3(v, p, q)
+	end,
 	fromHex = function(hex)
 		hex = hex:gsub("#", "")
 
@@ -157,6 +180,30 @@ function Color3Class.__index.Lerp(self, other, alpha)
 		self.G + (other.G - self.G) * alpha,
 		self.B + (other.B - self.B) * alpha
 	)
+end
+
+--- Roblox's own conversion, near enough for tests: hue in sixths, saturation
+--- and value from the extremes of the three channels.
+function Color3Class.__index.ToHSV(self)
+	local max = math.max(self.R, self.G, self.B)
+	local min = math.min(self.R, self.G, self.B)
+	local delta = max - min
+
+	local hue = 0
+
+	if delta > 0 then
+		if max == self.R then
+			hue = ((self.G - self.B) / delta) % 6
+		elseif max == self.G then
+			hue = (self.B - self.R) / delta + 2
+		else
+			hue = (self.R - self.G) / delta + 4
+		end
+
+		hue /= 6
+	end
+
+	return hue, (if max == 0 then 0 else delta / max), max
 end
 
 function Color3Class.__index.ToHex(self)
@@ -851,8 +898,10 @@ environment = {
 			return setmetatable({ Time = time or 1 }, TweenInfoClass)
 		end,
 	},
-	NumberSequence = { new = function(...) return { ... } end },
-	ColorSequence = { new = function(...) return { ... } end },
+	NumberSequence = { new = function(...) return { keypoints = { ... } } end },
+	NumberSequenceKeypoint = { new = function(time, value) return { Time = time, Value = value } end },
+	ColorSequence = { new = function(...) return { keypoints = { ... } } end },
+	ColorSequenceKeypoint = { new = function(time, value) return { Time = time, Value = value } end },
 	NumberRange = { new = function(a, b) return { Min = a, Max = b or a } end },
 	Font = { new = function(...) return { ... } end },
 

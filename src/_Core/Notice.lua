@@ -99,6 +99,7 @@ function Notice.new(flare: any, kind: Types.Kind, body: string?): Notice
 
 			Placeholder = nil,
 			Default = nil,
+			Color = nil,
 			Attach = nil,
 			Side = nil,
 
@@ -363,6 +364,21 @@ end
 --- Pre-fills a prompt's field.
 function Notice.Default(self: Notice, text: string): Notice
 	self.Spec.Default = text
+
+	return Notice.Refresh(self)
+end
+
+--- The colour a `Color` notice opens on. Rebuilds rather than refreshes when
+--- the notice is already up, because the picker holds its own state once it
+--- exists and will not take a new one from underneath it.
+function Notice.Color(self: Notice, color: Color3): Notice
+	self.Spec.Color = color
+
+	if self.Panel and self.Refs.Picker then
+		self.Refs.Picker:setSilent(color)
+
+		return self
+	end
 
 	return Notice.Refresh(self)
 end

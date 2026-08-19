@@ -26,6 +26,7 @@ export type Kind =
 	| "Progress"
 	| "Loading"
 	| "Countdown"
+	| "Color"
 	| "Achievement"
 	| "Reward"
 	| "Hint"
@@ -118,6 +119,8 @@ export type Spec = {
 
 	Placeholder: string?,
 	Default: string?,
+	--- The colour a `Color` notice opens on.
+	Color: Color3?,
 	Attach: GuiObject?,
 	Side: Side?,
 

@@ -199,6 +199,19 @@ end
 
 beat(3)
 
+section("color")
+
+--- Lume's picker in a notice. It resolves with the `Color3` itself, and writes
+--- every drag back to `notice.Spec.Color` — so a preview can follow the pointer
+--- rather than waiting for the answer.
+local colour = Flare.Color("Trail colour", Color3.fromRGB(126, 170, 255)):Title("Pick a colour"):Await()
+
+if colour.Kind == "Value" then
+	Flare.Toast("That colour it is"):Ok():Show()
+end
+
+beat(3)
+
 --// 6. live notices -----------------------------------------------------------------------
 --- The builder and the handle are the same object, so every setter still works
 --- after `:Show()`. This is why a builder that goes inert would be wrong.

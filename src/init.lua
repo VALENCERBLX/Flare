@@ -507,7 +507,11 @@ end
 --// engine -----------------------------------------------------------------------
 --- Whether a kind fades on its own. Anything asking a question does not.
 function Flare.Transient(kind: string): boolean
-	return kind ~= "Confirm" and kind ~= "Prompt" and kind ~= "Choice" and kind ~= "Alert"
+	return kind ~= "Confirm"
+		and kind ~= "Prompt"
+		and kind ~= "Choice"
+		and kind ~= "Color"
+		and kind ~= "Alert"
 end
 
 --- Queues a notice. Called by `Notice:Show()`.
@@ -731,6 +735,41 @@ end
 --- Asks for a line of text.
 function Flare.Prompt(body: string?): Notice
 	local notice = make("Prompt", body)
+
+	notice:Action("Cancel", function(handle)
+		handle:Resolve({ Kind = "Cancelled" })
+
+		return false
+	end)
+
+	return notice
+end
+
+--- Asks for a colour. Resolves with the `Color3` itself.
+---
+--- ```lua
+--- local answer = Flare.Color("Trail colour", Color3.fromRGB(126, 170, 255)):Await()
+---
+--- if answer.Kind == "Value" then
+---     trail.Color = ColorSequence.new(answer.Value)
+--- end
+--- ```
+---
+--- Watch the drag rather than only the answer by reading `notice.Spec.Color`
+--- from an `OnShow` handler, or by passing a handler to `Flare.Color` — the
+--- picker writes every change back to the spec.
+function Flare.Color(body: string?, initial: Color3?): Notice
+	local notice = make("Color", body)
+
+	if initial then
+		notice:Color(initial)
+	end
+
+	notice:Action("Pick", function(handle)
+		handle:Resolve({ Kind = "Value", Value = handle.Spec.Color })
+
+		return false
+	end)
 
 	notice:Action("Cancel", function(handle)
 		handle:Resolve({ Kind = "Cancelled" })

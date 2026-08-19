@@ -327,6 +327,29 @@ function Kinds.Prompt(panel: any, flare: any, notice: Notice, refs: { [string]: 
 	refs.Field = field
 end
 
+--- A colour picker in a notice. Resolves with the `Color3`, not a hex string —
+--- the caller almost always wants to assign it to something.
+function Kinds.Color(panel: any, flare: any, notice: Notice, refs: { [string]: any })
+	Kinds.Simple(panel, flare, notice, refs)
+
+	local spec = notice.Spec
+	local picker = panel:colorPicker()
+
+	picker:setFill(true)
+
+	if spec.Color then
+		picker:setSilent(spec.Color)
+	end
+
+	--// the notice carries the live colour, so a caller watching the handle sees
+	--// the drag rather than only the answer
+	picker:onChanged(function(color)
+		spec.Color = color
+	end)
+
+	refs.Picker = picker
+end
+
 --- Big, centred, and celebratory. The one kind that is allowed to interrupt.
 function Kinds.Achievement(panel: any, flare: any, notice: Notice, refs: { [string]: any })
 	local theme = flare.Theme
@@ -399,6 +422,7 @@ local BUILDERS: { [string]: (any, any, any, any) -> () } = {
 	Progress = Kinds.Progress,
 	Choice = Kinds.Choice,
 	Prompt = Kinds.Prompt,
+	Color = Kinds.Color,
 	Achievement = Kinds.Achievement,
 	Reward = Kinds.Achievement,
 }

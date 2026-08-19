@@ -19,7 +19,7 @@ local function answer()
 		if notice.Shown and not notice.Resolved then
 			local kind = notice.Spec.Kind
 
-			if kind == "Confirm" or kind == "Prompt" or kind == "Choice" then
+			if kind == "Confirm" or kind == "Prompt" or kind == "Choice" or kind == "Color" then
 				notice:Resolve({ Kind = "Dismissed" })
 			end
 		end
